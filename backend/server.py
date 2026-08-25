@@ -37,6 +37,9 @@ EMERGENT_SESSION_TTL_DAYS = 7
 STRIPE_API_KEY = os.environ["STRIPE_API_KEY"]
 EMERGENT_SESSION_DATA_URL = "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data"
 
+# CORS allowlist — explicit origins only. Credentialed CORS cannot use a wildcard.
+CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
+
 # Server-side fixed pricing — NEVER accept amount from client
 PRICING_TIERS = {
     "solo_annual":      {"amount": 89.00,  "label": "Solo Builder Edition (1 year)",   "grant_plan": "solo",             "grant_credits": 50},
@@ -204,6 +207,14 @@ async def get_current_user(request: Request) -> Dict[str, Any]:
 # ────────────────────────────────────────────────────────────────────────────
 # Brute-force lockout helpers
 # ────────────────────────────────────────────────────────────────────────────
+def _client_ip(request: Request) -> str:
+    """Real client IP behind the k8s ingress/reverse proxy (X-Forwarded-For first hop)."""
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 async def _is_locked(identifier: str) -> bool:
     rec = await db.login_attempts.find_one({"identifier": identifier}, {"_id": 0})
     if not rec:
@@ -264,9 +275,9 @@ async def signup(payload: SignupRequest, response: Response):
 @api_router.post("/auth/login")
 async def login(payload: LoginRequest, request: Request, response: Response):
     email = payload.email.lower().strip()
-    # Use email as the brute-force identifier — request.client.host is the upstream pod
-    # IP in k8s/ingress contexts, which rotates per-request and breaks counter accumulation.
-    identifier = f"email:{email}"
+    # Key the lockout on email + real client IP so an attacker on another IP cannot
+    # lock a legitimate user out of their own account (targeted-DoS mitigation).
+    identifier = f"email:{email}|ip:{_client_ip(request)}"
     if await _is_locked(identifier):
         raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
     user = await db.users.find_one({"email": email})
@@ -549,12 +560,11 @@ async def root():
 async def health():
     """Liveness + Mongo readiness probe. Safe to poll from uptime monitors."""
     db_ok = True
-    db_error: Optional[str] = None
     try:
         await db.command("ping")
     except Exception as exc:
         db_ok = False
-        db_error = str(exc)
+        logger.error("Health check DB ping failed: %s", exc)
 
     payload = {
         "status": "ok" if db_ok else "degraded",
@@ -565,8 +575,6 @@ async def health():
         "uptime_seconds": int((datetime.now(timezone.utc) - BOOT_TIME).total_seconds()),
         "checked_at": datetime.now(timezone.utc).isoformat(),
     }
-    if db_error:
-        payload["database_error"] = db_error
     return JSONResponse(payload, status_code=200 if db_ok else 503)
 
 
@@ -614,12 +622,12 @@ async def waitlist_desktop(payload: DesktopWaitlistRequest, request: Request):
 # Startup
 # ────────────────────────────────────────────────────────────────────────────
 FOUNDER_ACCOUNTS = [
-    # Full-access founder accounts. Passwords come from env; the defaults below
-    # are used only in dev/preview. Rotate in production via .env.
+    # Full-access founder accounts. Credentials come strictly from env vars; if they
+    # are unset the account is simply not seeded (no in-source password fallback).
     {
         "name": "Braiden Barker",
-        "email_env": "BRAIDEN_EMAIL",   "email_default": "braiden@aether.dev",
-        "pw_env":    "BRAIDEN_PASSWORD","pw_default":    "founder_braiden_2026",
+        "email_env": "BRAIDEN_EMAIL",
+        "pw_env": "BRAIDEN_PASSWORD",
     },
 ]
 
@@ -629,7 +637,10 @@ DEMOTED_FOUNDER_EMAILS = ["byron@aether.dev"]
 
 async def seed_admin():
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@aether.dev").lower()
-    admin_pw = os.environ.get("ADMIN_PASSWORD", "admin123")
+    admin_pw = os.environ.get("ADMIN_PASSWORD")
+    if not admin_pw:
+        logger.warning("ADMIN_PASSWORD not set — skipping admin seed.")
+        return
     existing = await db.users.find_one({"email": admin_email})
     if existing is None:
         await db.users.insert_one(
@@ -662,8 +673,12 @@ async def seed_founders() -> None:
     ones so the founders can never accidentally deplete themselves.
     """
     for f in FOUNDER_ACCOUNTS:
-        email = os.environ.get(f["email_env"], f["email_default"]).lower()
-        pw = os.environ.get(f["pw_env"], f["pw_default"])
+        email = os.environ.get(f["email_env"])
+        pw = os.environ.get(f["pw_env"])
+        if not email or not pw:
+            logger.warning("Founder '%s' not seeded — %s/%s env vars missing.", f["name"], f["email_env"], f["pw_env"])
+            continue
+        email = email.lower()
         existing = await db.users.find_one({"email": email})
         if existing is None:
             await db.users.insert_one(
@@ -715,21 +730,6 @@ async def on_startup():
                 {"$set": {"role": "user", "founder": False}},
             )
             logger.info(f"Demoted former founder account: {demoted_email}")
-    # Also promote your existing accounts (if you've already signed up with a real email)
-    # to founder status so you don't have to switch accounts.
-    for real_email in ["braidenbarker5@gmail.com"]:
-        existing = await db.users.find_one({"email": real_email})
-        if existing is not None:
-            await db.users.update_one(
-                {"email": real_email},
-                {"$set": {
-                    "role": "admin",
-                    "plan": "founding_builder",
-                    "credits": max(existing.get("credits", 0), 1_000_000),
-                    "founder": True,
-                }},
-            )
-            logger.info(f"Promoted existing account to founder: {real_email}")
     logger.info("Aether backend startup complete")
 
 
@@ -738,10 +738,10 @@ async def on_shutdown():
     client.close()
 
 
-# CORS — credentials require explicit origin list. Allow any preview/origin via regex.
+# CORS — credentialed requests require an explicit origin allowlist (never a wildcard).
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=".*",
+    allow_origins=CORS_ORIGINS or ["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

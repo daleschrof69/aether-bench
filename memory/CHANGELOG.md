@@ -132,3 +132,12 @@ Detects & guides installation of the local dependencies so users can move from d
 - Dashboard, MTK/Qualcomm/iPhone service modules, Logs, Pricing, Settings, Docs.
 - Cloud Exploit DB live feed, Founding Builder $299 lifetime CTA, Demo Mode banner.
 - Scaffolded Rust CLI (`/app/aether-cli/`) with JSON-RPC bridge stub.
+
+## 2026-08-25 — Security Audit remediation (FAIL → hardened)
+Fixed all 5 findings from the read-only security audit:
+- **SEC-001 (CRITICAL)**: Removed hard-coded founder/admin password defaults from `server.py` source. Credentials now come strictly from env (`ADMIN_PASSWORD`, `BRAIDEN_EMAIL/PASSWORD`); accounts are skipped (with warning) if env vars are unset. Added `BRAIDEN_EMAIL/BRAIDEN_PASSWORD` to `backend/.env`.
+- **SEC-002 (HIGH)**: Replaced `allow_origin_regex=".*"` credentialed CORS with an explicit env-driven allowlist (`CORS_ORIGINS`). App now rejects untrusted origins (verified: evil origin gets no allow-origin header; trusted preview origin is reflected).
+- **SEC-003 (MEDIUM)**: Removed hard-coded auto-promotion of `braidenbarker5@gmail.com` to founder-on-restart (privilege-escalation risk).
+- **SEC-004 (MEDIUM)**: Login brute-force lockout now keyed on `email + real client IP` (X-Forwarded-For) so an attacker on another IP can't lock out a legitimate user (targeted-DoS mitigation).
+- **SEC-005 (LOW)**: `/api/health` no longer leaks raw DB exception strings; error is logged server-side only.
+Verified via curl: founder/admin login 200, wrong password 401, CORS allowlist enforced at app boundary, health payload clean. Frontend login page renders intact.
