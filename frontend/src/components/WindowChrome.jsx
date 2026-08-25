@@ -1,8 +1,10 @@
 import React from "react";
-import { Minus, Square, X, Wrench } from "lucide-react";
+import { Minus, Square, X, Wrench, FileArchive } from "lucide-react";
 import { DownloadCliButton } from "./DownloadCliButton";
 import { DownloadDesktopButton } from "./DownloadDesktopButton";
 import { useApp } from "../context/AppContext";
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const LOGO_URL =
   "https://static.prod-images.emergentagent.com/jobs/540cc9df-c50a-4a07-a460-6c88ca22b1a7/images/2d4119f8e681e91c440e01928176b55e52818652e44fd72f5f424ba935136d9c.png";
@@ -19,7 +21,7 @@ export const WindowChrome = () => {
         <span className="font-mono text-[11px] tracking-[0.25em] text-white/80 uppercase">
           Aether Repair Tool
         </span>
-        <span className="font-mono text-[10px] text-white/30">v4.7.2</span>
+        <span className="font-mono text-[10px] text-white/30">v4.8.0</span>
         <span
           data-testid="window-demo-badge"
           className="font-mono text-[9px] tracking-[0.25em] uppercase text-yellow-400 border border-yellow-400/40 bg-yellow-400/5 px-1.5 py-0.5"
@@ -40,6 +42,15 @@ export const WindowChrome = () => {
         </button>
         <DownloadDesktopButton variant="compact" />
         <DownloadCliButton variant="compact" />
+        <a
+          data-testid="window-download-source"
+          href={`${API}/download/source`}
+          className="h-7 px-2.5 border border-[#00FF41]/30 hover:bg-[#00FF41]/10 text-[#00FF41] font-mono text-[10px] tracking-[0.22em] uppercase flex items-center gap-1.5 transition-colors"
+          title="Download full source (.zip) — authorized personal use only"
+        >
+          <FileArchive className="w-3 h-3" />
+          Source
+        </a>
         <div className="flex items-center gap-1">
           <button
             data-testid="window-minimize"

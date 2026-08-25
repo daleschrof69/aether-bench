@@ -148,3 +148,8 @@ Verified via curl: founder/admin login 200, wrong password 401, CORS allowlist e
 - Frontend: `GetDesktopHeroCard.jsx` now has a working "Download full source (.zip) now" link → `/api/download/source`, plus an "Authorized personal use only" line. `Footer.jsx` shows "Authorized personal use only".
 - Version bump (fresh build): APP_VERSION 4.7.2 → 4.8.0; DESKTOP_VERSION 0.1.0 → 0.1.1; CLI_VERSION 0.2.0 → 0.2.1.
 - Native .msi/.dmg/.AppImage still require the GitHub Actions Tauri pipeline (cannot cross-compile a Windows installer in the Linux container) — download buttons point to GitHub Releases, produced after the repo is pushed + tag pushed.
+
+## 2026-08-25 — Prominent SOURCE button + redeploy
+- Added a prominent "SOURCE" download button to the top bar (WindowChrome.jsx) next to Download CLI → GET /api/download/source. Verified rendering after founder login.
+- Synced visible version to 4.8.0 (title bar + Settings page).
+- Fresh production deploy dispatched (ECU acknowledged). CORS_ORIGINS must include the production origin (flagged to deployer).
