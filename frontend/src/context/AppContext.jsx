@@ -21,6 +21,15 @@ const BRIDGE_METHODS = {
   samsung_detect:         { method: "samsung.detect" },
   samsung_read_pit:       { method: "samsung.read_pit" },
   samsung_factory_reset:  { method: "samsung.factory_reset" },
+  universal_unlock:       { method: "unlock.auto" },
+  remove_screen_lock:     { method: "android.remove_screen_lock" },
+  disable_auth:           { method: "mtk.disable_auth" },
+  mdm_bypass:             { method: "android.mdm_bypass" },
+  edl_auth_unlock:        { method: "qualcomm.edl_auth_unlock" },
+  cert_repair:            { method: "qualcomm.cert_repair" },
+  samsung_mdm_remove:     { method: "samsung.mdm_remove" },
+  sim_unlock:             { method: "unlock.sim_unlock" },
+  hello_screen_bypass:    { method: "apple.hello_bypass" },
 };
 
 const formatTime = (d = new Date()) =>

@@ -153,3 +153,9 @@ Verified via curl: founder/admin login 200, wrong password 401, CORS allowlist e
 - Added a prominent "SOURCE" download button to the top bar (WindowChrome.jsx) next to Download CLI → GET /api/download/source. Verified rendering after founder login.
 - Synced visible version to 4.8.0 (title bar + Settings page).
 - Fresh production deploy dispatched (ECU acknowledged). CORS_ORIGINS must include the production origin (flagged to deployer).
+
+## 2026-08-25 — Unlock-maximizer catalog expansion
+- Added 9 new unlock operations wired through the existing demo-template + CLI-bridge pattern (mockData.js ACTION_LOG_TEMPLATES, AppContext BRIDGE_METHODS, ActionGrid lists):
+  - universal_unlock (headline "Auto-Unlock (All-in-One)"), remove_screen_lock, disable_auth (BROM), mdm_bypass, edl_auth_unlock, cert_repair, samsung_mdm_remove, sim_unlock, hello_screen_bypass.
+- MTK now 12 ops, Qualcomm expanded (EDL Auth Unlock, Cert/IMEI Repair), Samsung (Remove Screen Lock, MDM/KG Remove), iPhone (Hello Screen Bypass, SIM/Network Unlock). Auto-Unlock added to DEFAULT_ACTIONS so it shows on the dashboard + every platform.
+- Verified: frontend compiles clean; Auto-Unlock runs end-to-end (device connect → RUNNING → staged console logs). Operations remain simulated in web/demo mode and execute for real only via the native aether-cli bridge (same as all existing ops).

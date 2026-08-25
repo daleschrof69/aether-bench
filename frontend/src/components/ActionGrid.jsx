@@ -18,6 +18,12 @@ import {
   ShieldCheck,
   Activity,
   Search,
+  Sparkles,
+  Smartphone,
+  Building2,
+  FileCheck2,
+  Signal,
+  Layers,
 } from "lucide-react";
 
 const ICONS = {
@@ -37,10 +43,18 @@ const ICONS = {
   Activity,
   Search,
   Zap,
+  Sparkles,
+  Smartphone,
+  Building2,
+  FileCheck2,
+  Signal,
+  Layers,
 };
 
 const DEFAULT_ACTIONS = [
+  { key: "universal_unlock",  label: "Auto-Unlock (All-in-One)", icon: "Sparkles", danger: false, testid: "action-universal-unlock", cost: "25 Credits" },
   { key: "bypass_frp",        label: "Aegis Unlock",        icon: "ShieldOff", danger: false, testid: "action-bypass-frp", cost: "Free" },
+  { key: "remove_screen_lock",label: "Remove Screen Lock",  icon: "KeyRound",  danger: false, testid: "action-remove-screen-lock", cost: "8 Credits" },
   { key: "repair_imei",       label: "Repair IMEI",         icon: "Hash",      danger: false, testid: "action-repair-imei", cost: "5 Credits" },
   { key: "unlock_bootloader", label: "Unlock Bootloader",   icon: "Unlock",    danger: true,  testid: "action-unlock-bootloader", cost: "10 Credits" },
   { key: "erase_userdata",    label: "Erase Userdata",      icon: "Eraser",    danger: true,  testid: "action-erase-userdata", cost: "Free" },
@@ -152,7 +166,9 @@ export const ActionGrid = ({ platform = "MediaTek", actions, title }) => {
 // Pre-built action lists for each platform module
 export const MTK_ACTIONS = [
   ...DEFAULT_ACTIONS,
+  { key: "disable_auth",      label: "Disable Auth (BROM)", icon: "Layers",    danger: false, testid: "action-disable-auth", cost: "Free" },
   { key: "mi_account_bypass", label: "Mi Account Bypass", icon: "Cloud",     danger: false, testid: "action-mi-account",   cost: "20 Credits" },
+  { key: "mdm_bypass",        label: "MDM Bypass",         icon: "Building2", danger: false, testid: "action-mdm-bypass",   cost: "18 Credits" },
   { key: "read_codes",        label: "Read Lockscreen",    icon: "KeyRound",  danger: false, testid: "action-read-codes",   cost: "8 Credits" },
   { key: "read_frp_token",    label: "Read Aegis Token",   icon: "Fingerprint", danger: false, testid: "action-read-frp",   cost: "3 Credits" },
   { key: "boot_repair",       label: "Boot Repair",        icon: "Wrench",    danger: false, testid: "action-boot-repair",  cost: "10 Credits" },
@@ -160,7 +176,9 @@ export const MTK_ACTIONS = [
 
 export const QC_ACTIONS = [
   { key: "enter_edl",         label: "Enter EDL (no cable)", icon: "Zap",     danger: false, testid: "action-enter-edl",    cost: "Free" },
+  { key: "edl_auth_unlock",   label: "EDL Auth Unlock",    icon: "Unlock",    danger: false, testid: "action-edl-auth",     cost: "20 Credits" },
   ...DEFAULT_ACTIONS,
+  { key: "cert_repair",       label: "Cert / IMEI Repair", icon: "FileCheck2", danger: false, testid: "action-cert-repair", cost: "15 Credits" },
   { key: "knox_suspend",      label: "Samsung KG Suspend", icon: "Lock",      danger: false, testid: "action-knox-suspend", cost: "15 Credits" },
   { key: "carrier_unlock",    label: "Carrier Unlock",     icon: "Wifi",      danger: false, testid: "action-carrier-unlock", cost: "12 Credits" },
   { key: "demo_unit_disable", label: "Disable Demo Mode",  icon: "Tag",       danger: false, testid: "action-demo-disable", cost: "4 Credits" },
@@ -170,6 +188,8 @@ export const QC_ACTIONS = [
 export const IPHONE_ACTIONS = [
   { key: "read_info",         label: "Modern Diagnostic",  icon: "Activity",     danger: false, testid: "iphone-action-diag",     cost: "20 Credits" },
   { key: "icloud_check",      label: "Activation Probe",   icon: "Search",       danger: false, testid: "iphone-action-probe",    cost: "5 Credits" },
+  { key: "hello_screen_bypass", label: "Hello Screen Bypass", icon: "Smartphone", danger: false, testid: "iphone-action-hello", cost: "35 Credits" },
+  { key: "sim_unlock",        label: "SIM / Network Unlock", icon: "Signal",     danger: false, testid: "iphone-action-sim",     cost: "25 Credits" },
   { key: "passcode_recover",  label: "Passcode Recovery",  icon: "Lock",         danger: true,  testid: "iphone-action-passcode", cost: "30 Credits" },
   { key: "trust_audit",       label: "Trust Cache Audit",  icon: "ShieldCheck",  danger: false, testid: "iphone-action-trust",    cost: "10 Credits" },
 ];
@@ -181,6 +201,8 @@ export const IPHONE_ACTIONS = [
 export const SAMSUNG_ACTIONS = [
   { key: "samsung_detect",        label: "Detect Device",      icon: "Search",       danger: false, testid: "action-samsung-detect",  cost: "Free" },
   { key: "samsung_read_pit",      label: "Read PIT Table",     icon: "Hash",         danger: false, testid: "action-samsung-pit",     cost: "Free" },
-  { key: "samsung_factory_reset", label: "Factory Reset",      icon: "Eraser",       danger: true,  testid: "action-samsung-reset",   cost: "15 Credits" },
   { key: "bypass_frp",            label: "Aegis Unlock",       icon: "ShieldOff",    danger: false, testid: "action-samsung-frp",     cost: "20 Credits" },
+  { key: "remove_screen_lock",    label: "Remove Screen Lock", icon: "KeyRound",     danger: false, testid: "action-samsung-screen",  cost: "10 Credits" },
+  { key: "samsung_mdm_remove",    label: "MDM / KG Remove",    icon: "Building2",    danger: false, testid: "action-samsung-mdm",     cost: "25 Credits" },
+  { key: "samsung_factory_reset", label: "Factory Reset",      icon: "Eraser",       danger: true,  testid: "action-samsung-reset",   cost: "15 Credits" },
 ];
