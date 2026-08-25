@@ -18,7 +18,6 @@ import bcrypt
 import jwt as pyjwt
 from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends
 from fastapi.responses import JSONResponse, FileResponse
-from starlette.background import BackgroundTask
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -594,50 +593,109 @@ async def version():
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Source download — a fresh, on-demand bundle of the full software.
-# Secrets (.env) and build/vendor artefacts are excluded. Authorized personal
-# use only (see LICENSE.md bundled in the archive).
+# Source download — a fresh, on-demand bundle of the software.
+# Uses an ALLOWLIST of publishable paths (never a full-tree walk) so secrets,
+# credential docs, and local-only files can never leak. Admin-only + cached.
 # ────────────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = ROOT_DIR.parent  # /app
 
+# Only these top-level entries are ever bundled. Anything else at the repo root
+# (memory/, auth_testing.md, test_reports/, tests/, .git, .gitconfig, .emergent,
+# design_guidelines.json, etc.) is intentionally excluded.
+_ZIP_INCLUDE_DIRS = ("frontend", "backend", "aether-cli", "aether-desktop", ".github")
+_ZIP_INCLUDE_FILES = ("README.md", "LICENSE.md", "BUILD.md", "SIGNING.md", "yarn.lock")
+
+# Defense-in-depth denylist applied WITHIN the allowlisted dirs.
 _ZIP_EXCLUDE_DIRS = {
     "node_modules", ".git", "target", "build", "dist", "__pycache__",
     ".venv", "venv", ".next", "coverage", "test_reports", ".emergent", ".cache",
 }
-_ZIP_EXCLUDE_SUFFIXES = (".pyc", ".log", ".zip")
-_ZIP_EXCLUDE_NAMES = {".env", ".env.local", ".env.production"}
+_ZIP_EXCLUDE_SUFFIXES = (".pyc", ".log", ".zip", ".pem", ".key", ".p12", ".keystore")
+_ZIP_EXCLUDE_NAMES = {
+    ".env", ".gitconfig", "id_rsa", "id_rsa.pub", "test_credentials.md",
+}
+
+
+def _is_secretish(fn: str) -> bool:
+    low = fn.lower()
+    if fn in _ZIP_EXCLUDE_NAMES or low.endswith(_ZIP_EXCLUDE_SUFFIXES):
+        return True
+    if low.startswith(".env"):  # .env, .env.local, .env.production, .env.*
+        return True
+    if "credential" in low or "secret" in low:
+        return True
+    return False
+
+
+def _add_tree(zf: "zipfile.ZipFile", base: str) -> None:
+    for root, dirs, files in os.walk(base):
+        dirs[:] = [d for d in dirs if d not in _ZIP_EXCLUDE_DIRS]
+        for fn in files:
+            if _is_secretish(fn):
+                continue
+            full = os.path.join(root, fn)
+            rel = os.path.relpath(full, PROJECT_ROOT)
+            try:
+                zf.write(full, os.path.join("aether-repair-tool", rel))
+            except OSError:
+                continue
 
 
 def _build_source_zip() -> str:
     fd, path = tempfile.mkstemp(prefix="aether-src-", suffix=".zip")
     os.close(fd)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, dirs, files in os.walk(PROJECT_ROOT):
-            dirs[:] = [d for d in dirs if d not in _ZIP_EXCLUDE_DIRS]
-            for fn in files:
-                if fn in _ZIP_EXCLUDE_NAMES or fn.endswith(_ZIP_EXCLUDE_SUFFIXES):
-                    continue
-                full = os.path.join(root, fn)
-                rel = os.path.relpath(full, PROJECT_ROOT)
-                try:
-                    zf.write(full, os.path.join("aether-repair-tool", rel))
-                except OSError:
-                    continue
+        for d in _ZIP_INCLUDE_DIRS:
+            full = os.path.join(PROJECT_ROOT, d)
+            if os.path.isdir(full):
+                _add_tree(zf, full)
+        for fn in _ZIP_INCLUDE_FILES:
+            full = os.path.join(PROJECT_ROOT, fn)
+            if os.path.isfile(full) and not _is_secretish(fn):
+                zf.write(full, os.path.join("aether-repair-tool", fn))
     return path
 
 
+# Cache one built artefact and rebuild at most once per TTL. A lock prevents
+# concurrent heavy builds (resource-exhaustion mitigation).
+_zip_lock = asyncio.Lock()
+_zip_cache: Dict[str, Any] = {"path": None, "built_at": 0.0}
+_ZIP_CACHE_TTL = 300.0  # seconds
+
+
+async def _get_cached_source_zip() -> str:
+    import time
+    async with _zip_lock:
+        now = time.time()
+        c = _zip_cache
+        if c["path"] and os.path.exists(c["path"]) and (now - c["built_at"]) < _ZIP_CACHE_TTL:
+            return c["path"]
+        new_path = await asyncio.to_thread(_build_source_zip)
+        old = c["path"]
+        c["path"], c["built_at"] = new_path, now
+        if old and old != new_path and os.path.exists(old):
+            try:
+                os.remove(old)
+            except OSError:
+                pass
+        return new_path
+
+
+async def require_admin(user=Depends(get_current_user)) -> Dict[str, Any]:
+    if user.get("role") != "admin" and not user.get("founder"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
 @api_router.get("/download/source")
-async def download_source():
-    """Stream a freshly-built .zip of the full source (secrets excluded).
+async def download_source(_admin=Depends(require_admin)):
+    """Stream a freshly-built .zip of publishable source (admin/founder only).
+    Uses an allowlist of paths — secrets and credential docs are never bundled.
     AUTHORIZED PERSONAL USE ONLY — see LICENSE.md inside the archive."""
-    path = await asyncio.to_thread(_build_source_zip)
+    path = await _get_cached_source_zip()
     filename = f"aether-repair-tool-src-v{APP_VERSION}.zip"
-    return FileResponse(
-        path,
-        media_type="application/zip",
-        filename=filename,
-        background=BackgroundTask(os.remove, path),
-    )
+    # Do not delete the cached file after send; the cache manages its lifecycle.
+    return FileResponse(path, media_type="application/zip", filename=filename)
 
 
 class DesktopWaitlistRequest(BaseModel):

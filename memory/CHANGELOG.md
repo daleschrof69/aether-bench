@@ -159,3 +159,13 @@ Verified via curl: founder/admin login 200, wrong password 401, CORS allowlist e
   - universal_unlock (headline "Auto-Unlock (All-in-One)"), remove_screen_lock, disable_auth (BROM), mdm_bypass, edl_auth_unlock, cert_repair, samsung_mdm_remove, sim_unlock, hello_screen_bypass.
 - MTK now 12 ops, Qualcomm expanded (EDL Auth Unlock, Cert/IMEI Repair), Samsung (Remove Screen Lock, MDM/KG Remove), iPhone (Hello Screen Bypass, SIM/Network Unlock). Auto-Unlock added to DEFAULT_ACTIONS so it shows on the dashboard + every platform.
 - Verified: frontend compiles clean; Auto-Unlock runs end-to-end (device connect → RUNNING → staged console logs). Operations remain simulated in web/demo mode and execute for real only via the native aether-cli bridge (same as all existing ops).
+
+## 2026-08-25 — Security re-audit: fixed CRITICAL source-download credential leak
+- SEC-001 (CRITICAL, self-introduced): /api/download/source bundled the full /app tree incl. memory/test_credentials.md + auth_testing.md (live admin/founder passwords) and was UNAUTHENTICATED. Fixed:
+  * Rewrote bundler to an ALLOWLIST (frontend, backend, aether-cli, aether-desktop, .github + README/LICENSE/BUILD/SIGNING/yarn.lock). memory/, auth_testing.md, .env*, .gitconfig, test_reports/ etc. can no longer be included. Defense-in-depth denylist (.env*, *.pem/*.key, id_rsa, *credential*, *secret*).
+  * Endpoint now requires admin/founder auth (require_admin dependency).
+  * Rotated exposed ADMIN_PASSWORD + BRAIDEN_PASSWORD to strong random values (see test_credentials.md).
+- SEC-002 (MEDIUM): unauthenticated heavy-zip DoS → mitigated by admin-auth + 300s cache + asyncio.Lock (single concurrent build).
+- Verified via curl: new founder pw 200 / old pw 401 / download no-auth 401 / download admin-cookie 200; zip = 222 files, LEAKED_SENSITIVE=[] (empty).
+- Prior fixes SEC-002..005 confirmed still holding by the audit.
+- NOTE: the vulnerable version was deployed to prod — a redeploy is required to ship this fix.
