@@ -193,14 +193,28 @@ export const GetDesktopHeroCard = () => {
         )}
       </div>
 
-      <div className="relative px-4 pb-3 md:px-5 flex items-center gap-3 justify-center md:justify-start font-mono text-[10px] tracking-[0.18em] uppercase text-white/30">
-        <Apple className="w-3 h-3" />
-        <span>macOS .dmg</span>
-        <span className="text-white/20">·</span>
-        <Monitor className="w-3 h-3" />
-        <span>Linux .AppImage</span>
-        <span className="text-white/20">·</span>
-        <span>coming with the same tag</span>
+      <div className="relative px-4 pb-3 md:px-5 flex flex-col gap-2">
+        <div className="flex items-center gap-3 justify-center md:justify-start font-mono text-[10px] tracking-[0.18em] uppercase text-white/30">
+          <Apple className="w-3 h-3" />
+          <span>macOS .dmg</span>
+          <span className="text-white/20">·</span>
+          <Monitor className="w-3 h-3" />
+          <span>Linux .AppImage</span>
+          <span className="text-white/20">·</span>
+          <span>coming with the same tag</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 justify-center md:justify-start font-mono text-[10px] tracking-[0.18em] uppercase">
+          <a
+            data-testid="get-desktop-hero-download-source"
+            href={`${API}/download/source`}
+            className="inline-flex items-center gap-1.5 text-[#00FF41] hover:text-[#00CC33] transition-colors"
+          >
+            <Download className="w-3 h-3" />
+            Download full source (.zip) now
+          </a>
+          <span className="text-white/20">·</span>
+          <span className="text-white/30">Authorized personal use only</span>
+        </div>
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ export const Footer = () => {
       <div className="flex items-center gap-4">
         <span>© {year} Aether Labs</span>
         <span className="text-white/20">·</span>
-        <span className="hidden md:inline">For licensed technicians</span>
+        <span className="hidden md:inline">Authorized personal use only</span>
         <span className="text-white/20 hidden lg:inline">·</span>
         <a
           data-testid="footer-author-credit"

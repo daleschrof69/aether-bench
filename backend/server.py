@@ -8,13 +8,17 @@ load_dotenv(ROOT_DIR / '.env')
 import os
 import logging
 import uuid
+import asyncio
+import tempfile
+import zipfile
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 
 import bcrypt
 import jwt as pyjwt
 from fastapi import FastAPI, APIRouter, Request, Response, HTTPException, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from starlette.background import BackgroundTask
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
@@ -528,7 +532,7 @@ async def stripe_webhook(request: Request):
 # ────────────────────────────────────────────────────────────────────────────
 # Misc routes
 # ────────────────────────────────────────────────────────────────────────────
-APP_VERSION = "4.7.2"
+APP_VERSION = "4.8.0"
 # Captured at import time so it reflects the deployed build, not the request time.
 BOOT_TIME = datetime.now(timezone.utc)
 
@@ -587,6 +591,53 @@ async def version():
         "commit": BUILD_COMMIT,
         "booted_at": BOOT_TIME.isoformat(),
     }
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Source download — a fresh, on-demand bundle of the full software.
+# Secrets (.env) and build/vendor artefacts are excluded. Authorized personal
+# use only (see LICENSE.md bundled in the archive).
+# ────────────────────────────────────────────────────────────────────────────
+PROJECT_ROOT = ROOT_DIR.parent  # /app
+
+_ZIP_EXCLUDE_DIRS = {
+    "node_modules", ".git", "target", "build", "dist", "__pycache__",
+    ".venv", "venv", ".next", "coverage", "test_reports", ".emergent", ".cache",
+}
+_ZIP_EXCLUDE_SUFFIXES = (".pyc", ".log", ".zip")
+_ZIP_EXCLUDE_NAMES = {".env", ".env.local", ".env.production"}
+
+
+def _build_source_zip() -> str:
+    fd, path = tempfile.mkstemp(prefix="aether-src-", suffix=".zip")
+    os.close(fd)
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, dirs, files in os.walk(PROJECT_ROOT):
+            dirs[:] = [d for d in dirs if d not in _ZIP_EXCLUDE_DIRS]
+            for fn in files:
+                if fn in _ZIP_EXCLUDE_NAMES or fn.endswith(_ZIP_EXCLUDE_SUFFIXES):
+                    continue
+                full = os.path.join(root, fn)
+                rel = os.path.relpath(full, PROJECT_ROOT)
+                try:
+                    zf.write(full, os.path.join("aether-repair-tool", rel))
+                except OSError:
+                    continue
+    return path
+
+
+@api_router.get("/download/source")
+async def download_source():
+    """Stream a freshly-built .zip of the full source (secrets excluded).
+    AUTHORIZED PERSONAL USE ONLY — see LICENSE.md inside the archive."""
+    path = await asyncio.to_thread(_build_source_zip)
+    filename = f"aether-repair-tool-src-v{APP_VERSION}.zip"
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(os.remove, path),
+    )
 
 
 class DesktopWaitlistRequest(BaseModel):
