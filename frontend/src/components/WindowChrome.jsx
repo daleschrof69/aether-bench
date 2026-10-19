@@ -10,7 +10,8 @@ const LOGO_URL =
   "https://static.prod-images.emergentagent.com/jobs/540cc9df-c50a-4a07-a460-6c88ca22b1a7/images/2d4119f8e681e91c440e01928176b55e52818652e44fd72f5f424ba935136d9c.png";
 
 export const WindowChrome = () => {
-  const { setSetupOpen } = useApp();
+  const { setSetupOpen, cliBridge } = useApp();
+  const live = cliBridge?.status === "connected";
   return (
     <div
       data-testid="window-chrome"
@@ -19,15 +20,23 @@ export const WindowChrome = () => {
       <div className="flex items-center gap-2">
         <img src={LOGO_URL} alt="Aether" className="w-4 h-4 object-contain" />
         <span className="font-mono text-[11px] tracking-[0.25em] text-white/80 uppercase">
-          Aether Repair Tool
+          Aether Phone Repair Tools
         </span>
         <span className="font-mono text-[10px] text-white/30">v4.8.0</span>
         <span
-          data-testid="window-demo-badge"
-          className="font-mono text-[9px] tracking-[0.25em] uppercase text-yellow-400 border border-yellow-400/40 bg-yellow-400/5 px-1.5 py-0.5"
-          title="Web demo — desktop CLI required for real device repair"
+          data-testid="window-bridge-badge"
+          className={`font-mono text-[9px] tracking-[0.25em] uppercase px-1.5 py-0.5 border ${
+            live
+              ? "text-[#00FF41] border-[#00FF41]/40 bg-[#00FF41]/5"
+              : "text-yellow-400 border-yellow-400/40 bg-yellow-400/5"
+          }`}
+          title={
+            live
+              ? "Local Aether CLI bridge connected — real hardware mode"
+              : "Local Aether CLI bridge offline — start aether-cli for real device repair"
+          }
         >
-          Demo
+          {live ? "Live" : "Offline"}
         </span>
       </div>
       <div className="flex items-center gap-3">

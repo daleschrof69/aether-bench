@@ -44,7 +44,7 @@ export default function QualcommService() {
             onClick={() => startSearch("QC")}
             disabled={status === "searching"}
             className="h-10 px-4 border border-[#00FF41]/40 bg-[#00FF41]/5 hover:bg-[#00FF41]/15 text-[#00FF41] font-mono text-[11px] tracking-[0.18em] uppercase transition-colors disabled:opacity-40 flex items-center justify-center gap-2 flex-shrink-0"
-            title="Web demo — simulates a Qualcomm device entering EDL 9008 mode."
+            title="Scan for a Qualcomm device in EDL 9008 mode via the local Aether CLI bridge."
           >
             {status === "searching" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Usb className="w-3.5 h-3.5" />}
             {status === "searching" ? "Scanning…" : "Connect Qualcomm"}

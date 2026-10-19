@@ -36,6 +36,38 @@ Aether CLI shells out to the following open-source tools as **separate processes
   Note 9 / older A-series. Newer Knox 3.x devices (S10+) often reject
   partition writes without Samsung-signed firmware. See `/app/aether-cli/src/heimdall.rs`.
 
+## edlclient (Qualcomm Sahara/Firehose)
+
+- **Source:** https://github.com/bkerler/edl
+- **License:** MIT
+- **How Aether uses it:** Aether CLI invokes the `edl` command (installed via
+  `pip install --user edlclient`) as a subprocess for `qualcomm.read_info`,
+  `qualcomm.edl_auth_unlock`, `qualcomm.cert_repair` and `qualcomm.safe_format`.
+  No edlclient code is embedded, linked, or modified.
+- Firehose operations need the correct signed loader (programmer) for the SoC.
+  edlclient bundles a large loader database; OEM-locked (Secure Boot fused)
+  devices require an OEM-signed loader that Aether does not ship, and edl
+  reports a Sahara/auth error on those. See `/app/aether-cli/src/qualcomm.rs`.
+
+## gaster (checkm8)
+
+- **Source:** https://github.com/0x7ff/gaster
+- **License:** BSD-3-Clause
+- **How Aether uses it:** Aether CLI invokes the `gaster` binary as a subprocess
+  (`gaster pwn`) to run the checkm8 BootROM exploit for `apple.pwn_dfu`. No
+  gaster code is embedded, linked, or modified.
+- checkm8 covers A5–A11 SoCs only (iPhone 5s … iPhone X). A12+ are not
+  exploitable. Pwned-DFU is the entry point; a full activation-lock / Hello
+  removal ramdisk workflow is NOT bundled. See `/app/aether-cli/src/apple.rs`.
+
+## libimobiledevice / irecovery
+
+- **Source:** https://github.com/libimobiledevice/libimobiledevice
+- **License:** LGPL-2.1
+- **How Aether uses it:** Aether CLI invokes the `irecovery` binary as a
+  subprocess (`irecovery -q`) to read device info in Recovery/DFU for
+  `apple.read_info`. No libimobiledevice code is embedded, linked, or modified.
+
 ---
 
 ## Legal — IMEI changes

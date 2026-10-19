@@ -53,7 +53,7 @@ export default function SamsungService() {
             onClick={() => startSearch("SAMSUNG")}
             disabled={status === "searching"}
             className="h-10 px-4 border border-[#1f5fdb]/50 bg-[#1f5fdb]/10 hover:bg-[#1f5fdb]/20 text-[#4d8bff] font-mono text-[11px] tracking-[0.18em] uppercase transition-colors disabled:opacity-40 flex items-center justify-center gap-2 flex-shrink-0"
-            title="Web demo — simulates a Samsung device entering Download Mode."
+            title="Scan for a Samsung device in Download Mode via the local Aether CLI bridge."
           >
             {status === "searching" ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />

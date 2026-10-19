@@ -46,7 +46,7 @@ export default function MTKService() {
             onClick={() => startSearch("MTK")}
             disabled={status === "searching"}
             className="h-10 px-4 border border-[#00FF41]/40 bg-[#00FF41]/5 hover:bg-[#00FF41]/15 text-[#00FF41] font-mono text-[11px] tracking-[0.18em] uppercase transition-colors disabled:opacity-40 flex items-center justify-center gap-2 flex-shrink-0"
-            title="Web demo — simulates a MediaTek device entering BROM mode."
+            title="Scan for a MediaTek device in BROM mode via the local Aether CLI bridge."
           >
             {status === "searching" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Usb className="w-3.5 h-3.5" />}
             {status === "searching" ? "Scanning…" : "Connect MTK"}

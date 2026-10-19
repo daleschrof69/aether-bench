@@ -15,6 +15,8 @@ mod bridge;
 mod mtkclient;
 mod heimdall;
 mod edl;
+mod qualcomm;
+mod apple;
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
@@ -154,6 +156,11 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", out.dimmed());
             let ver = mtkclient::check_mtkclient()?;
             println!("  {} mtkclient {} ready", "✓".bright_green(), ver.bright_white());
+            println!("  {} installing edlclient (Qualcomm Firehose) via pip ...", "→".bright_green());
+            match qualcomm::install_edl_once().await {
+                Ok(_) => println!("  {} edlclient ready", "✓".bright_green()),
+                Err(e) => println!("  {} edlclient: {}", "✗".bright_red(), e),
+            }
         }
         Command::Doctor => {
             match mtkclient::check_mtkclient() {
@@ -163,6 +170,14 @@ async fn main() -> anyhow::Result<()> {
             match heimdall::check_heimdall() {
                 Ok(v) => println!("  {} {}", "✓".bright_green(), v.bright_white()),
                 Err(e) => println!("  {} heimdall: {}", "✗".bright_red(), e),
+            }
+            match qualcomm::check_edl() {
+                Ok(v) => println!("  {} {}", "✓".bright_green(), v.bright_white()),
+                Err(e) => println!("  {} edl: {}", "✗".bright_red(), e),
+            }
+            match apple::check_apple() {
+                Ok(v) => println!("  {} apple: {}", "✓".bright_green(), v.bright_white()),
+                Err(e) => println!("  {} apple: {}", "✗".bright_red(), e),
             }
         }
     }

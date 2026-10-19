@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 import { toast } from "sonner";
-import { generateDevice, COM_PORTS, ACTION_LOG_TEMPLATES, fillTemplate } from "../lib/mockData";
 import { useCliBridge } from "../hooks/useCliBridge";
 import { useWebUsb } from "../hooks/useWebUsb";
 
@@ -8,28 +7,36 @@ const AppContext = createContext(null);
 export const useApp = () => useContext(AppContext);
 
 // Mapping from a UI action key to the JSON-RPC method on the local CLI bridge.
-// When the bridge is connected we call the real method (which streams
-// mtkclient output back as log lines). When the bridge is offline we fall
-// back to the deterministic demo simulation in mockData.js.
+// Every entry here maps to a REAL operation that the native aether-cli executes
+// via mtkclient / heimdall / edlclient / checkm8 on the connected device. There
+// is no simulation / demo fallback — operations only run when the local CLI
+// bridge is live. Keys NOT listed here are not yet backed by a real tool and
+// are reported honestly as unavailable (never faked).
 const BRIDGE_METHODS = {
+  // MediaTek (mtkclient)
   bypass_frp:             { method: "mtk.frp_bypass" },
   repair_imei:            { method: "mtk.repair_imei" },
   unlock_bootloader:      { method: "mtk.unlock_bootloader" },
   erase_userdata:         { method: "mtk.erase_userdata" },
   read_info:              { method: "mtk.read_info" },
-  enter_edl:              { method: "qualcomm.enter_edl" },
-  samsung_detect:         { method: "samsung.detect" },
-  samsung_read_pit:       { method: "samsung.read_pit" },
-  samsung_factory_reset:  { method: "samsung.factory_reset" },
   universal_unlock:       { method: "unlock.auto" },
   remove_screen_lock:     { method: "android.remove_screen_lock" },
   disable_auth:           { method: "mtk.disable_auth" },
-  mdm_bypass:             { method: "android.mdm_bypass" },
+  read_frp_token:         { method: "mtk.read_frp" },
+  mdm_bypass:             { method: "android.remove_screen_lock" },
+  // Qualcomm (edlclient — Sahara/Firehose)
+  enter_edl:              { method: "qualcomm.enter_edl" },
   edl_auth_unlock:        { method: "qualcomm.edl_auth_unlock" },
   cert_repair:            { method: "qualcomm.cert_repair" },
-  samsung_mdm_remove:     { method: "samsung.mdm_remove" },
-  sim_unlock:             { method: "unlock.sim_unlock" },
-  hello_screen_bypass:    { method: "apple.hello_bypass" },
+  safe_format:            { method: "qualcomm.safe_format" },
+  // Samsung (heimdall — Odin/Loke)
+  samsung_detect:         { method: "samsung.detect" },
+  samsung_read_pit:       { method: "samsung.read_pit" },
+  samsung_factory_reset:  { method: "samsung.factory_reset" },
+  // Apple (checkm8 / libimobiledevice)
+  apple_info:             { method: "apple.read_info" },
+  icloud_check:           { method: "apple.read_info" },
+  hello_screen_bypass:    { method: "apple.pwn_dfu" },
 };
 
 const formatTime = (d = new Date()) =>
@@ -73,32 +80,61 @@ export const AppProvider = ({ children }) => {
     timersRef.current = [];
   }, []);
 
-  const startSearch = useCallback((forceChipset = "auto") => {
-    // Coerce accidental event-object args (onClick={startSearch}) back to auto.
-    const chipset = typeof forceChipset === "string" ? forceChipset : "auto";
+  // Real device scan via the local Aether CLI bridge (libusb enumeration on the
+  // host). No simulation: if the bridge is offline we tell the user how to
+  // bring it online instead of inventing a fake device.
+  const startSearch = useCallback(async () => {
     clearTimers();
     setStatus("searching");
     setDevice(null);
     setComPort(null);
-    pushLog("INFO", "Aether driver loaded. Scanning USB bus ...");
-    pushLog("INFO", "Listening on COM ports: " + COM_PORTS.join(", "));
+    pushLog("INFO", "Scanning USB bus via local Aether bridge ...");
 
-    const t1 = setTimeout(() => pushLog("INFO", "Probing for MTK preloader signature ..."), 350);
-    const t2 = setTimeout(() => pushLog("INFO", "Probing for Qualcomm EDL 9008 ..."), 700);
-    const t2b = setTimeout(() => pushLog("INFO", "Probing for Samsung Download Mode (Odin/Loke) ..."), 1000);
-    const t3 = setTimeout(() => {
-      const dev = generateDevice(chipset);
-      const port = COM_PORTS[Math.floor(Math.random() * COM_PORTS.length)];
+    if (cliBridge.status !== "connected" || typeof cliBridge.call !== "function") {
+      pushLog("ERROR", "Local Aether CLI bridge is offline — no real USB access.");
+      pushLog("INFO", "Start aether-cli on this machine (or launch the Aether desktop app), then retry.");
+      pushLog("INFO", "Or click 'Connect via WebUSB' to pair a device directly in Chrome / Edge / Opera over HTTPS.");
+      setStatus("idle");
+      toast.error("CLI bridge offline", { description: "Start the Aether CLI to detect real devices." });
+      return;
+    }
+
+    try {
+      const res = await cliBridge.call("devices", {});
+      const list = Array.isArray(res?.devices) ? res.devices : [];
+      const target = list.find((d) => d.repair_mode) || list[0];
+      if (!target) {
+        pushLog("WARN", "No USB devices found. Plug a phone in BROM / EDL / DFU / Download mode and retry.");
+        setStatus("idle");
+        toast.warning("No device detected");
+        return;
+      }
+      const dev = {
+        model: target.repair_mode || `USB ${target.vid}:${target.pid}`,
+        brand: target.repair_mode ? target.repair_mode.split(" ")[0] : "USB device",
+        platform: target.repair_mode || "USB",
+        imei: "—", imei_masked: "—", imei2: "—", imei2_masked: "—",
+        serial: "—",
+        bootloader: target.repair_mode || "Interface mode",
+        cpuId: "—", storage: "—", ram: "—", region: "—",
+        vid: target.vid, pid: target.pid,
+        android: "—", patch: "—",
+        source: "bridge",
+        detectedAt: new Date(),
+      };
       setDevice(dev);
-      setComPort(port);
+      setComPort(`bus ${target.bus} · addr ${target.addr}`);
       setStatus("connected");
-      pushLog("SUCCESS", `Handshake OK on ${port}`);
-      pushLog("SUCCESS", `Device detected: ${dev.model}`);
-      pushLog("INFO", `Brand: ${dev.brand} | Android ${dev.android} | Patch ${dev.patch}`);
-      toast.success(`Connected · ${dev.model}`, { description: `${dev.brand} · ${dev.platform} · ${port}` });
-    }, 1400);
-    timersRef.current = [t1, t2, t2b, t3];
-  }, [pushLog, clearTimers]);
+      pushLog("SUCCESS", `Device detected: ${dev.model} (${target.vid}:${target.pid})`);
+      if (!target.repair_mode) {
+        pushLog("WARN", "Device is not in a known repair mode. Enter BROM / EDL / DFU / Download mode for operations.");
+      }
+      toast.success(`Connected · ${dev.model}`, { description: `${target.vid}:${target.pid}` });
+    } catch (e) {
+      pushLog("ERROR", `Bridge device scan failed: ${e?.message || e}`);
+      setStatus("idle");
+    }
+  }, [cliBridge, pushLog, clearTimers]);
 
   const disconnect = useCallback(() => {
     clearTimers();
@@ -175,119 +211,97 @@ export const AppProvider = ({ children }) => {
     (actionKey, label, params = {}) => {
       if (status !== "connected" || activeAction) return;
 
-      // PATH A — bridge is live AND we have a real method for this action.
-      // Stream mtkclient output line-by-line into the console.
       const bridgeMap = BRIDGE_METHODS[actionKey];
-      if (
-        bridgeMap &&
-        cliBridge.status === "connected" &&
-        typeof cliBridge.runJob === "function"
-      ) {
-        setActiveAction(label);
-        setStatus("working");
-        setProgress(0);
-        pushLog("INFO", `>>> EXECUTING (LIVE): ${label}`);
-        pushLog("INFO", `aether-cli → ${bridgeMap.method}`);
+      const bridgeLive =
+        cliBridge.status === "connected" && typeof cliBridge.runJob === "function";
 
-        cliBridge
-          .runJob(bridgeMap.method, { ...(bridgeMap.params || {}), ...params }, (ev) => {
-            if (ev.stream === "stdout" && ev.line) {
-              pushLog("INFO", ev.line);
-            } else if (ev.stream === "stderr" && ev.line) {
-              pushLog("WARN", ev.line);
-            } else if (ev.stream === "done") {
-              if (ev.exit_code === 0) {
-                pushLog("SUCCESS", `${label} completed (exit 0).`);
-                toast.success(`${label} · done`, { description: "Operation completed successfully." });
-              } else {
-                pushLog("ERROR", `${label} failed (exit ${ev.exit_code}).`);
-                toast.error(`${label} · failed`, { description: `Exit code ${ev.exit_code}` });
-              }
-              const finishT = setTimeout(() => {
-                setActiveAction(null);
-                setStatus("connected");
-                setProgress(0);
-              }, 600);
-              timersRef.current.push(finishT);
-            }
-          })
-          .catch((e) => {
-            pushLog("ERROR", `bridge error: ${e?.message || e}`);
-            toast.error("Bridge error", { description: e?.message || String(e) });
-            setActiveAction(null);
-            setStatus("connected");
-            setProgress(0);
-          });
+      // No bridge → no operation. We never fake success.
+      if (!bridgeLive) {
+        pushLog("ERROR", `Cannot run "${label}" — local Aether CLI bridge is offline.`);
+        pushLog("INFO", "Start aether-cli on this machine (or launch the Aether desktop app) to run operations on real hardware.");
+        toast.error("Bridge offline", { description: `Start the Aether CLI to run ${label}.` });
         return;
       }
 
-      // PATH B — DEMO MODE. No bridge, no real CLI: play back the canned
-      // mockData template so the dashboard still feels alive for prospects.
-      const template = ACTION_LOG_TEMPLATES[actionKey];
-      if (!template) return;
-      // When the caller supplies IMEI values (IMEI Repair modal), reflect them
-      // in the simulated log lines instead of the device's random IMEI.
-      const fillDevice = params?.imei1
-        ? { ...(device || {}), imei: params.imei1, imei2: params.imei2 || device?.imei2 }
-        : device;
+      // Bridge live but this operation needs tooling the CLI doesn't expose yet.
+      if (!bridgeMap) {
+        pushLog("WARN", `"${label}" is not yet wired to a local CLI operation — skipping.`);
+        pushLog("INFO", "This operation requires an additional loader/module in aether-cli.");
+        toast.warning(`${label} · unavailable`, { description: "Not yet supported by the local CLI." });
+        return;
+      }
+
+      // LIVE execution — stream real mtkclient / heimdall output into the console.
       setActiveAction(label);
       setStatus("working");
       setProgress(0);
-      pushLog("INFO", `>>> EXECUTING (DEMO): ${label}`);
+      pushLog("INFO", `>>> EXECUTING (LIVE): ${label}`);
+      pushLog("INFO", `aether-cli → ${bridgeMap.method}`);
 
-      template.forEach((step, idx) => {
-        const t = setTimeout(
-          () => {
-            pushLog(step.level, fillTemplate(step.text, fillDevice));
-            setProgress(Math.round(((idx + 1) / template.length) * 100));
-            if (idx === template.length - 1) {
-              const finishT = setTimeout(() => {
-                setActiveAction(null);
-                setStatus("connected");
-                setProgress(0);
-                toast.success(`${label} · demo complete`, {
-                  description: "Install the CLI to run this operation on real hardware.",
-                });
-              }, 600);
-              timersRef.current.push(finishT);
+      cliBridge
+        .runJob(bridgeMap.method, { ...(bridgeMap.params || {}), ...params }, (ev) => {
+          if (ev.stream === "stdout" && ev.line) {
+            pushLog("INFO", ev.line);
+          } else if (ev.stream === "stderr" && ev.line) {
+            pushLog("WARN", ev.line);
+          } else if (ev.stream === "done") {
+            if (ev.exit_code === 0) {
+              pushLog("SUCCESS", `${label} completed (exit 0).`);
+              toast.success(`${label} · done`, { description: "Operation completed successfully." });
+            } else {
+              pushLog("ERROR", `${label} failed (exit ${ev.exit_code}).`);
+              toast.error(`${label} · failed`, { description: `Exit code ${ev.exit_code}` });
             }
-          },
-          (idx + 1) * 700
-        );
-        timersRef.current.push(t);
-      });
+            const finishT = setTimeout(() => {
+              setActiveAction(null);
+              setStatus("connected");
+              setProgress(0);
+            }, 600);
+            timersRef.current.push(finishT);
+          }
+        })
+        .catch((e) => {
+          pushLog("ERROR", `bridge error: ${e?.message || e}`);
+          toast.error("Bridge error", { description: e?.message || String(e) });
+          setActiveAction(null);
+          setStatus("connected");
+          setProgress(0);
+        });
     },
-    [status, activeAction, device, pushLog, cliBridge]
+    [status, activeAction, pushLog, cliBridge]
   );
 
-  // Boot sequence — ref-guarded so it runs once even if deps change.
+  // Boot sequence — honest init banner (no fake engine loading).
   const bootedRef = useRef(false);
   useEffect(() => {
     if (bootedRef.current) return;
     bootedRef.current = true;
-    pushLog("INFO", "[Aether] Initializing modules...");
-    const boot = [
-      { delay: 120, level: "INFO", text: "[Aether] Loading kernel driver aether-usb 2.4.1 ... OK" },
-      { delay: 240, level: "INFO", text: "[Aether] Qualcomm Sahara Engine Loaded" },
-      { delay: 360, level: "INFO", text: "[Aether] MediaTek BROM Engine Loaded" },
-      { delay: 480, level: "INFO", text: "[Aether] Apple DFU Pipeline Loaded (checkm8 / pongoOS)" },
-      { delay: 600, level: "INFO", text: "[Aether] Wallet sync · license active" },
-      { delay: 720, level: "SUCCESS", text: "[Aether] Ready. Awaiting target device." },
-    ];
-    boot.forEach((b) => {
-      const t = setTimeout(() => pushLog(b.level, b.text), b.delay);
-      timersRef.current.push(t);
-    });
-    if (autoConnect) {
-      const t = setTimeout(() => startSearch(), 900);
-      timersRef.current.push(t);
-    }
+    pushLog("INFO", "[Aether] Phone Repair Tools initializing ...");
+    pushLog("INFO", "[Aether] Looking for local CLI bridge on ws://127.0.0.1:8765 ...");
+    pushLog("INFO", "[Aether] Plug a device into BROM / EDL / DFU / Download mode, or pair via WebUSB.");
     return () => clearTimers();
-    // Boot must run exactly once; bootedRef guards re-entry. Empty deps
-    // are intentional — adding pushLog/startSearch would fire the cleanup
-    // (clearTimers) on every state change and kill the boot sequence.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // React to the local CLI bridge coming online/offline. When it connects and
+  // auto-connect is on, immediately scan for a real device.
+  const prevBridgeStatus = useRef("offline");
+  useEffect(() => {
+    if (cliBridge.status === "connected" && prevBridgeStatus.current !== "connected") {
+      pushLog(
+        "SUCCESS",
+        `Local Aether CLI bridge connected${cliBridge.info?.version ? ` (v${cliBridge.info.version})` : ""}.`
+      );
+      if (cliBridge.info?.mtkclient) pushLog("INFO", `mtkclient ${cliBridge.info.mtkclient} ready.`);
+      if (cliBridge.info?.heimdall) pushLog("INFO", `heimdall ${cliBridge.info.heimdall} ready.`);
+      if (autoConnect && status === "idle") startSearch();
+    }
+    if (cliBridge.status === "offline" && prevBridgeStatus.current === "connected") {
+      pushLog("WARN", "Local Aether CLI bridge disconnected.");
+    }
+    prevBridgeStatus.current = cliBridge.status;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cliBridge.status]);
 
   const value = {
     status,

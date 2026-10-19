@@ -61,17 +61,18 @@ export const DemoModeBanner = () => {
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono text-[10px] tracking-[0.25em] uppercase text-yellow-400 font-semibold">
-                Demo Mode
+                Hardware Not Connected
               </span>
               <span className="font-mono text-[10px] tracking-[0.2em] uppercase text-white/40">
-                Web preview · Not connected to USB
+                Local CLI bridge offline
               </span>
             </div>
             <div className="text-sm text-white/85 mt-1 leading-snug">
-              This is a preview of the Aether dashboard. Real device repair requires the{" "}
+              Real device repair runs through the{" "}
               <span className="text-[#00FF41] font-semibold">Aether CLI</span> (native Rust binary)
-              installed on your machine — the web UI alone cannot communicate with USB/BROM/EDL/DFU.
-              Plugging in a phone here will not detect it.
+              on your own machine. Start it (or launch the Aether desktop app) and this dashboard
+              auto-connects — then plug a phone into BROM / EDL / DFU / Download mode. Operations are
+              executed on real hardware; nothing here is simulated.
             </div>
           </div>
         </div>

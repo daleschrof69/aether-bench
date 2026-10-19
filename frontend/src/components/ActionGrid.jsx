@@ -186,9 +186,9 @@ export const QC_ACTIONS = [
 ];
 
 export const IPHONE_ACTIONS = [
-  { key: "read_info",         label: "Modern Diagnostic",  icon: "Activity",     danger: false, testid: "iphone-action-diag",     cost: "20 Credits" },
+  { key: "apple_info",        label: "Modern Diagnostic",  icon: "Activity",     danger: false, testid: "iphone-action-diag",     cost: "20 Credits" },
   { key: "icloud_check",      label: "Activation Probe",   icon: "Search",       danger: false, testid: "iphone-action-probe",    cost: "5 Credits" },
-  { key: "hello_screen_bypass", label: "Hello Screen Bypass", icon: "Smartphone", danger: false, testid: "iphone-action-hello", cost: "35 Credits" },
+  { key: "hello_screen_bypass", label: "Hello Screen Bypass (pwned-DFU)", icon: "Smartphone", danger: false, testid: "iphone-action-hello", cost: "35 Credits" },
   { key: "sim_unlock",        label: "SIM / Network Unlock", icon: "Signal",     danger: false, testid: "iphone-action-sim",     cost: "25 Credits" },
   { key: "passcode_recover",  label: "Passcode Recovery",  icon: "Lock",         danger: true,  testid: "iphone-action-passcode", cost: "30 Credits" },
   { key: "trust_audit",       label: "Trust Cache Audit",  icon: "ShieldCheck",  danger: false, testid: "iphone-action-trust",    cost: "10 Credits" },

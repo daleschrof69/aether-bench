@@ -26,6 +26,8 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::heimdall;
 use crate::mtkclient;
 use crate::edl;
+use crate::qualcomm;
+use crate::apple;
 
 const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 const BRIDGE_VERSION: &str = "2";
@@ -182,12 +184,36 @@ fn spawn_enter_edl_job(write: WsSink) -> String {
     spawn_job(Vec::new(), write, JobTool::EnterEdl)
 }
 
-#[derive(Clone, Copy)]
+/// Spawn an `edl ARGS...` (Qualcomm Firehose) job.
+fn spawn_edl_job(args: Vec<String>, write: WsSink) -> String {
+    spawn_job(args, write, JobTool::Edl)
+}
+
+/// Spawn a `pip install --user --upgrade edlclient` job.
+fn spawn_pip_edl_job(write: WsSink) -> String {
+    spawn_job(Vec::new(), write, JobTool::PipEdl)
+}
+
+/// Spawn an `irecovery -q` (Apple device info) job.
+fn spawn_apple_info_job(write: WsSink) -> String {
+    spawn_job(Vec::new(), write, JobTool::AppleInfo)
+}
+
+/// Spawn a `gaster pwn` (checkm8 pwned-DFU) job.
+fn spawn_apple_pwn_job(write: WsSink) -> String {
+    spawn_job(Vec::new(), write, JobTool::ApplePwn)
+}
+
+#[derive(Clone)]
 enum JobTool {
     Mtkclient,
     Heimdall,
     PipMtkclient,
+    PipEdl,
     EnterEdl,
+    Edl,
+    AppleInfo,
+    ApplePwn,
 }
 
 fn spawn_job(args: Vec<String>, write: WsSink, tool: JobTool) -> String {
@@ -202,7 +228,11 @@ fn spawn_job(args: Vec<String>, write: WsSink, tool: JobTool) -> String {
                 JobTool::Mtkclient => mtkclient::run_mtkclient_streaming(&refs, tx).await,
                 JobTool::Heimdall => heimdall::run_heimdall_streaming(&refs, tx).await,
                 JobTool::PipMtkclient => mtkclient::install_mtkclient_streaming(tx).await,
+                JobTool::PipEdl => qualcomm::install_edl_streaming(tx).await,
                 JobTool::EnterEdl => edl::enter_edl_streaming(tx).await,
+                JobTool::Edl => qualcomm::run_edl_streaming(&refs, tx).await,
+                JobTool::AppleInfo => apple::read_info_streaming(tx).await,
+                JobTool::ApplePwn => apple::pwn_dfu_streaming(tx).await,
             }
         });
         while let Some(sl) = rx.recv().await {
@@ -250,12 +280,16 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
         "hello" => {
             let mtk_version = mtkclient::check_mtkclient().ok();
             let heimdall_version = heimdall::check_heimdall().ok();
+            let edl_version = qualcomm::check_edl().ok();
+            let apple_version = apple::check_apple().ok();
             Ok(json!({
                 "name": "aether-cli",
                 "version": CLI_VERSION,
                 "bridge": BRIDGE_VERSION,
                 "mtkclient": mtk_version,
                 "heimdall": heimdall_version,
+                "edl": edl_version,
+                "apple": apple_version,
                 "capabilities": [
                     "devices",
                     "info",
@@ -264,12 +298,23 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
                     "mtk.unlock_bootloader",
                     "mtk.erase_userdata",
                     "mtk.read_info",
+                    "mtk.disable_auth",
+                    "mtk.read_frp",
+                    "unlock.auto",
+                    "android.remove_screen_lock",
                     "samsung.detect",
                     "samsung.read_pit",
                     "samsung.factory_reset",
                     "qualcomm.enter_edl",
+                    "qualcomm.read_info",
+                    "qualcomm.edl_auth_unlock",
+                    "qualcomm.cert_repair",
+                    "qualcomm.safe_format",
+                    "apple.read_info",
+                    "apple.pwn_dfu",
                     "setup.doctor",
-                    "setup.install_mtkclient"
+                    "setup.install_mtkclient",
+                    "setup.install_edl"
                 ],
             }))
         }
@@ -278,6 +323,54 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
         // Cable-free EDL entry: reboot an ADB/fastboot device into Qualcomm 9008.
         "qualcomm.enter_edl" => {
             let job_id = spawn_enter_edl_job(write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+        // Qualcomm Firehose read: dump the GPT partition table.
+        "qualcomm.read_info" => {
+            let job_id = spawn_edl_job(vec!["printgpt".into()], write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+        // Qualcomm auth/FRP removal: erase the FRP (frp) partition over Firehose.
+        "qualcomm.edl_auth_unlock" => {
+            let job_id = spawn_edl_job(vec!["e".into(), "frp".into()], write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+        // Cert / IMEI repair first step: back up the modem NV (modemst1) partition.
+        "qualcomm.cert_repair" => {
+            let job_id = spawn_edl_job(
+                vec!["r".into(), "modemst1".into(), "modemst1.bin".into()],
+                write.clone(),
+            );
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+        // Qualcomm safe format: erase userdata over Firehose.
+        "qualcomm.safe_format" => {
+            let job_id = spawn_edl_job(vec!["e".into(), "userdata".into()], write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+
+        // ─── Apple (checkm8 / libimobiledevice) operations ────────────────
+        "apple.read_info" => {
+            let job_id = spawn_apple_info_job(write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+        "apple.pwn_dfu" => {
+            let job_id = spawn_apple_pwn_job(write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+
+        // ─── MTK extra operations (mtkclient) ─────────────────────────────
+        // Disable BootROM DA auth (SLA/DAA) by sending mtkclient's payload.
+        "mtk.disable_auth" => {
+            let job_id = spawn_mtkclient_job(vec!["payload".into()], write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+        // Read / back up the FRP partition to a file.
+        "mtk.read_frp" => {
+            let job_id = spawn_mtkclient_job(
+                vec!["r".into(), "frp".into(), "frp.bin".into()],
+                write.clone(),
+            );
             Ok(json!({ "job_id": job_id, "status": "started" }))
         }
 
@@ -318,6 +411,23 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
             Ok(json!({ "job_id": job_id, "status": "started" }))
         }
 
+        // Universal auto-unlock: erase the FRP partition (Google account lock)
+        // — the most common one-tap unlock for MediaTek targets in BROM.
+        "unlock.auto" => {
+            let job_id = spawn_mtkclient_job(vec!["e".into(), "frp".into()], write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+
+        // Remove screen lock (pattern / PIN / password) by wiping the
+        // locksettings in userdata + metadata. Destructive to user data.
+        "android.remove_screen_lock" => {
+            let job_id = spawn_mtkclient_job(
+                vec!["e".into(), "userdata,metadata".into()],
+                write.clone(),
+            );
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+
         // ─── Samsung (Heimdall) operations ────────────────────────────────
         "samsung.detect" => {
             let job_id = spawn_heimdall_job(vec!["detect".into()], write.clone());
@@ -345,9 +455,15 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
             "python": mtkclient::check_python().ok(),
             "mtkclient": mtkclient::check_mtkclient().ok(),
             "heimdall": heimdall::check_heimdall().ok(),
+            "edl": qualcomm::check_edl().ok(),
+            "apple": apple::check_apple().ok(),
         })),
         "setup.install_mtkclient" => {
             let job_id = spawn_pip_mtkclient_job(write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+        "setup.install_edl" => {
+            let job_id = spawn_pip_edl_job(write.clone());
             Ok(json!({ "job_id": job_id, "status": "started" }))
         }
 
@@ -355,11 +471,15 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
             Ok(v) => Ok(json!({
                 "mtkclient": v,
                 "heimdall": heimdall::check_heimdall().ok(),
+                "edl": qualcomm::check_edl().ok(),
+                "apple": apple::check_apple().ok(),
                 "ok": true
             })),
             Err(e) => Ok(json!({
                 "mtkclient": null,
                 "heimdall": heimdall::check_heimdall().ok(),
+                "edl": qualcomm::check_edl().ok(),
+                "apple": apple::check_apple().ok(),
                 "ok": false,
                 "error": e.to_string()
             })),

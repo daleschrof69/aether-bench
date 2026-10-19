@@ -52,6 +52,12 @@ fn find_python() -> Result<String> {
     ))
 }
 
+/// Public accessor for the resolved Python interpreter path. Used by sibling
+/// modules (e.g. qualcomm) that pip-install their own Python dependencies.
+pub fn python_bin() -> Result<String> {
+    find_python()
+}
+
 /// Return the detected Python interpreter version string (e.g. "Python 3.11.4").
 /// Used by the Setup Wizard `setup.doctor` bridge method.
 pub fn check_python() -> Result<String> {

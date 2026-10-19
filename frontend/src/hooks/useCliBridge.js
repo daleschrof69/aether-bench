@@ -34,9 +34,11 @@ export function useCliBridge() {
       window.localStorage?.getItem("aether.bridge")) ||
     DEFAULT_URL;
 
-  const enabled =
-    typeof window !== "undefined" &&
-    window.localStorage?.getItem("aether.bridge.enabled") === "1";
+  // Bridge is enabled by default (auto-connects to the local CLI). Set
+  // localStorage `aether.bridge.enabled = "0"` to opt out.
+  const enabledRaw =
+    typeof window !== "undefined" ? window.localStorage?.getItem("aether.bridge.enabled") : null;
+  const enabled = enabledRaw == null ? true : enabledRaw === "1";
 
   const cleanup = useCallback(() => {
     if (reconnectRef.current) {

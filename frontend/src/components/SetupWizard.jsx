@@ -67,6 +67,16 @@ const CMDS = {
     macos: "brew install heimdall",
     linux: "sudo apt install heimdall-flash",
   },
+  edl: {
+    windows: "py -m pip install --user --upgrade edlclient",
+    macos: "pip3 install --user --upgrade edlclient",
+    linux: "pip3 install --user --upgrade edlclient",
+  },
+  apple: {
+    windows: "https://github.com/0x7ff/gaster",
+    macos: "brew install libimobiledevice ; make -C gaster",
+    linux: "sudo apt install libirecovery-utils ; make -C gaster",
+  },
 };
 
 const CopyButton = ({ text, testid }) => {
@@ -174,10 +184,10 @@ const DependencyCard = ({ d, os, connected, installing, onAutoInstall }) => {
               Download Aether CLI
             </a>
           )}
-          {d.key === "mtkclient" && connected && d.state === "missing" && (
+          {(d.key === "mtkclient" || d.key === "edl") && connected && d.state === "missing" && (
             <button
-              data-testid="setup-autoinstall-mtkclient"
-              onClick={onAutoInstall}
+              data-testid={`setup-autoinstall-${d.key}`}
+              onClick={() => onAutoInstall(d.key)}
               disabled={installing}
               className="inline-flex items-center gap-2 h-8 px-3 bg-[#00FF41] hover:bg-[#00CC33] text-black font-mono text-[10px] tracking-[0.2em] uppercase font-bold transition-colors disabled:opacity-50"
             >
@@ -231,8 +241,24 @@ export const SetupWizard = () => {
         state: computeDepState(connected, info.heimdall),
         version: info.heimdall || undefined,
       },
+      {
+        key: "edl",
+        icon: Cpu,
+        name: "edlclient (Qualcomm)",
+        subtitle: "Sahara/Firehose client · powers Qualcomm EDL operations",
+        state: computeDepState(connected, info.edl),
+        version: info.edl || undefined,
+      },
+      {
+        key: "apple",
+        icon: Smartphone,
+        name: "checkm8 tools (iPhone)",
+        subtitle: "irecovery + gaster · powers Apple DFU / pwned-DFU (A5–A11)",
+        state: computeDepState(connected, info.apple),
+        version: info.apple || undefined,
+      },
     ],
-    [connected, cliVersion, info.mtkclient, info.heimdall, info.python]
+    [connected, cliVersion, info.mtkclient, info.heimdall, info.edl, info.apple, info.python]
   );
 
   const allReady = connected && info.mtkclient && info.heimdall;
@@ -273,6 +299,28 @@ export const SetupWizard = () => {
     } finally {
       setInstalling(false);
     }
+  };
+
+  const autoInstallEdl = async () => {
+    if (!connected || installing) return;
+    setInstalling(true);
+    pushLog("INFO", ">>> Setup: installing edlclient via pip ...");
+    try {
+      await bridge.runJob("setup.install_edl", {}, (ev) => {
+        if (ev.line) pushLog(ev.stream === "stderr" ? "WARN" : "INFO", ev.line);
+      });
+      pushLog("SUCCESS", "Setup: edlclient install finished. Re-checking ...");
+      await recheck();
+    } catch (e) {
+      pushLog("ERROR", `Setup: edlclient install failed — ${e?.message || e}`);
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const handleAutoInstall = (key) => {
+    if (key === "edl") return autoInstallEdl();
+    return autoInstallMtk();
   };
 
   // Proactively surface the wizard the first time a live CLI reports a
@@ -356,7 +404,7 @@ export const SetupWizard = () => {
               os={os}
               connected={connected}
               installing={installing}
-              onAutoInstall={autoInstallMtk}
+              onAutoInstall={handleAutoInstall}
             />
           ))}
         </div>
