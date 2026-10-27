@@ -31,6 +31,7 @@ Long-time lurker, first-time poster. Been fixing phones on the side for 4 years 
 So I built **Aether Repair Suite**. One native binary (Windows `.msi`, macOS Universal `.dmg`, Linux `.AppImage`). It talks to MTK BROM / Qualcomm Sahara + Firehose / Apple DFU / Samsung KG directly over USB — no browser tab, no bridge process, no dongle.
 
 **What it does today** *(v0.1 — beta)*:
+
 - MTK: FRP bypass, IMEI repair (dual SIM), partition read/write, DA-based flash
 - Qualcomm: EDL sahara login, cable-free EDL entry, firehose flash, sec-repair
 - Apple: DFU verify (checkm8 + pongoOS wrapping is planned — legacy A-series only)
@@ -40,6 +41,7 @@ So I built **Aether Repair Suite**. One native binary (Windows `.msi`, macOS Uni
 **Video demo**: `[YOUR YOUTUBE LINK HERE]` — I flash a Redmi Note 12 FRP bypass in 47 seconds from a fresh Windows 11 install. No workarounds, no "run as admin" black magic.
 
 **Pricing** (deliberately aggressive because I need to earn my slot on your workbench):
+
 - **Impulse** — $9 for 15 credits (~$0.60/op) → just to try it
 - **Starter** — $19 for 50 credits (~$0.38/op)
 - **Solo Builder Edition** — $89/year, unlimited access to Solo tier operations + 50 credits/month
@@ -48,14 +50,17 @@ So I built **Aether Repair Suite**. One native binary (Windows `.msi`, macOS Uni
 **Founder deal for GSM-Forum members only**: reply with your forum username and I'll manually credit **50 free credits** to your account (enough for ~5 real operations). No CC needed for those. First 50 replies.
 
 I'm here in the thread all day. Roast me on:
+
 - Missing brands / chipsets you need first
 - UI things that look off
 - Pricing you'd actually pay
 - Bugs you find (I'll patch and re-issue same-day)
 
 If you want the code / to verify I'm not shipping malware:
+
 - **Website**: [YOUR AETHER URL]
 - **GitHub**: https://github.com/braidenbarker
+- **GitHub**: [github.com/braidenbarker](https://github.com/braidenbarker)
 - **Direct download**: [MSI/DMG/APPIMAGE LINKS]
 
 Cheers,
