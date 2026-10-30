@@ -39,7 +39,7 @@ const LOGO_URL =
 
 const BrandHeader = () => (
   <div className="px-5 py-5 border-b border-white/10">
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3 pr-10 lg:pr-0">
       <div className="w-11 h-11 border border-[#00FF41]/40 bg-black flex items-center justify-center relative overflow-hidden">
         <img
           src={LOGO_URL}
@@ -75,7 +75,7 @@ const BuyCreditsCta = ({ onClick }) => (
   <button
     data-testid="sidebar-buy-credits-btn"
     onClick={onClick}
-    className="mx-3 mb-2 h-9 bg-[#00FF41] hover:bg-[#00CC33] text-black font-mono text-[10px] tracking-[0.22em] uppercase font-bold flex items-center justify-center gap-1.5 transition-colors"
+    className="mx-3 mb-2 h-11 lg:h-9 bg-[#00FF41] hover:bg-[#00CC33] text-black font-mono text-[10px] tracking-[0.22em] uppercase font-bold flex items-center justify-center gap-1.5 transition-colors"
   >
     <ShoppingCart className="w-3 h-3" />
     Buy Credits
@@ -89,7 +89,7 @@ const NavItem = ({ item }) => (
       end={item.end}
       data-testid={item.testid}
       className={({ isActive }) =>
-        `group relative flex items-center gap-3 px-3 py-2.5 text-sm transition-colors ${
+        `group relative flex items-center gap-3 px-3 min-h-11 py-2.5 text-sm transition-colors ${
           isActive
             ? "bg-[#00FF41]/10 text-[#00FF41] border-l-2 border-[#00FF41]"
             : "text-white/60 hover:text-white hover:bg-white/5 border-l-2 border-transparent"
@@ -103,7 +103,7 @@ const NavItem = ({ item }) => (
 );
 
 const NavList = () => (
-  <nav className="flex-1 py-3 px-2 overflow-y-auto">
+  <nav className="flex-1 py-3 px-2 overflow-y-auto overscroll-contain">
     <div className="px-3 mb-2 text-[10px] uppercase tracking-[0.25em] text-white/30 font-mono">
       Navigation
     </div>
@@ -151,17 +151,28 @@ export const Sidebar = () => {
     setMobileOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    if (!mobileOpen) return undefined;
+    const onKey = (event) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
+
   const drawerCls = mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0";
 
   return (
     <>
       <button
         data-testid="sidebar-mobile-toggle"
-        onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-12 left-2 z-30 w-9 h-9 flex items-center justify-center border border-white/15 bg-[#070709]/95 backdrop-blur text-white/70 hover:text-[#00FF41] hover:border-[#00FF41]/40 transition-colors"
-        aria-label="Open navigation"
+        onClick={() => setMobileOpen((open) => !open)}
+        className="lg:hidden fixed top-0 left-0 z-[60] h-10 w-11 flex items-center justify-center text-white/80 hover:text-[#00FF41] hover:bg-white/5 transition-colors"
+        aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+        aria-expanded={mobileOpen}
+        aria-controls="app-sidebar"
       >
-        <Menu className="w-4 h-4" />
+        {mobileOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
       </button>
 
       {mobileOpen && (
@@ -173,13 +184,14 @@ export const Sidebar = () => {
       )}
 
       <aside
+        id="app-sidebar"
         data-testid="app-sidebar"
-        className={`w-60 flex-shrink-0 bg-[#070709] border-r border-white/10 flex flex-col fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:relative lg:translate-x-0 lg:transition-none ${drawerCls}`}
+        className={`w-[min(18rem,calc(100vw-2.75rem))] lg:w-60 flex-shrink-0 bg-[#070709] border-r border-white/10 flex flex-col fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:relative lg:translate-x-0 lg:transition-none ${drawerCls}`}
       >
         <button
           data-testid="sidebar-mobile-close"
           onClick={() => setMobileOpen(false)}
-          className="lg:hidden absolute top-3 right-3 w-7 h-7 flex items-center justify-center text-white/50 hover:text-white transition-colors"
+          className="lg:hidden absolute top-0 right-0 w-11 h-11 flex items-center justify-center text-white/50 hover:text-white transition-colors"
           aria-label="Close navigation"
         >
           <X className="w-4 h-4" />
