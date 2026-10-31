@@ -111,23 +111,68 @@ class TestEmergentSession:
         assert r.status_code == 401
 
 
+# Contract for GET /api/stripe/pricing. Mirrors PRICING_TIERS in server.py.
+# credits_impulse is intentional: the pricing page and BuyCreditsModal both sell
+# the $9 Impulse pack (+15 credits).
+DEFINED_PRICING_TIERS = [
+    {
+        "tier_id": "solo_annual",
+        "amount": 89.0,
+        "label": "Solo Builder Edition (1 year)",
+        "grant_plan": "solo",
+        "grant_credits": 50,
+    },
+    {
+        "tier_id": "founding_lifetime",
+        "amount": 299.0,
+        "label": "Founding Builder · Lifetime",
+        "grant_plan": "founding_builder",
+        "grant_credits": 500,
+    },
+    {
+        "tier_id": "credits_impulse",
+        "amount": 9.0,
+        "label": "Impulse · +15 credits",
+        "grant_plan": None,
+        "grant_credits": 15,
+    },
+    {
+        "tier_id": "credits_starter",
+        "amount": 19.0,
+        "label": "Starter · +50 credits",
+        "grant_plan": None,
+        "grant_credits": 50,
+    },
+    {
+        "tier_id": "credits_builder",
+        "amount": 49.0,
+        "label": "Builder · +150 credits",
+        "grant_plan": None,
+        "grant_credits": 150,
+    },
+    {
+        "tier_id": "credits_workshop",
+        "amount": 149.0,
+        "label": "Workshop · +500 credits",
+        "grant_plan": None,
+        "grant_credits": 500,
+    },
+    {
+        "tier_id": "credits_wholesale",
+        "amount": 499.0,
+        "label": "Wholesale · +2000 credits",
+        "grant_plan": None,
+        "grant_credits": 2000,
+    },
+]
+
+
 # ──────────────── Stripe pricing ────────────────
 class TestStripePricing:
-    def test_pricing_returns_six_tiers(self) -> None:
+    def test_pricing_returns_defined_tiers(self) -> None:
         r = requests.get(f"{API}/stripe/pricing")
         assert r.status_code == 200
-        data = r.json()
-        tiers = {t["tier_id"]: t for t in data["tiers"]}
-        assert set(tiers.keys()) == {
-            "solo_annual", "founding_lifetime",
-            "credits_starter", "credits_builder", "credits_workshop", "credits_wholesale",
-        }
-        assert tiers["solo_annual"]["amount"] == 89.0
-        assert tiers["founding_lifetime"]["amount"] == 299.0
-        assert tiers["credits_starter"]["amount"] == 19.0
-        assert tiers["credits_builder"]["amount"] == 49.0
-        assert tiers["credits_workshop"]["amount"] == 149.0
-        assert tiers["credits_wholesale"]["amount"] == 499.0
+        assert r.json()["tiers"] == DEFINED_PRICING_TIERS
 
 
 # ──────────────── Stripe checkout ────────────────
