@@ -23,11 +23,11 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::apple;
+use crate::edl;
 use crate::heimdall;
 use crate::mtkclient;
-use crate::edl;
 use crate::qualcomm;
-use crate::apple;
 
 const CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 const BRIDGE_VERSION: &str = "2";
@@ -135,7 +135,10 @@ async fn handle_client(ws: tokio_tungstenite::WebSocketStream<tokio::net::TcpStr
                 jsonrpc: "2.0",
                 id,
                 result: None,
-                error: Some(RpcError { code: -32000, message: msg }),
+                error: Some(RpcError {
+                    code: -32000,
+                    message: msg,
+                }),
             },
         };
         let payload = serde_json::to_value(&response).unwrap_or(Value::Null);
@@ -192,6 +195,57 @@ fn spawn_edl_job(args: Vec<String>, write: WsSink) -> String {
 /// Spawn a `pip install --user --upgrade edlclient` job.
 fn spawn_pip_edl_job(write: WsSink) -> String {
     spawn_job(Vec::new(), write, JobTool::PipEdl)
+}
+
+/// Spawn a read-only identity / diagnostic job. Streams a short summary and
+/// one `AETHER_DIAG {json}` line for the dashboard.
+fn spawn_diag_job(port: String, section: String, dry_run: bool, write: WsSink) -> String {
+    let job_id = new_job_id();
+    let jid = job_id.clone();
+    tokio::spawn(async move {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<mtkclient::StreamLine>();
+        let run_task =
+            tokio::spawn(
+                async move { crate::diag::run_streaming(&port, &section, dry_run, tx).await },
+            );
+        while let Some(sl) = rx.recv().await {
+            send_json(
+                &write,
+                json!({
+                    "jsonrpc": "2.0",
+                    "method": "event",
+                    "params": { "job_id": jid, "stream": sl.stream, "line": sl.line },
+                }),
+            )
+            .await;
+        }
+        let exit = match run_task.await {
+            Ok(Ok(code)) => code,
+            Ok(Err(e)) => {
+                send_json(
+                    &write,
+                    json!({
+                        "jsonrpc": "2.0",
+                        "method": "event",
+                        "params": { "job_id": jid, "stream": "stderr", "line": format!("aether: {}", e) },
+                    }),
+                )
+                .await;
+                -1
+            }
+            Err(_) => -1,
+        };
+        send_json(
+            &write,
+            json!({
+                "jsonrpc": "2.0",
+                "method": "event",
+                "params": { "job_id": jid, "stream": "done", "exit_code": exit },
+            }),
+        )
+        .await;
+    });
+    job_id
 }
 
 /// Spawn an `irecovery -q` (Apple device info) job.
@@ -312,6 +366,13 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
                     "qualcomm.safe_format",
                     "apple.read_info",
                     "apple.pwn_dfu",
+                    "info",
+                    "diag.status",
+                    "diag.read",
+                    "diag.identity",
+                    "diag.firmware",
+                    "diag.battery",
+                    "diag.storage",
                     "setup.doctor",
                     "setup.install_mtkclient",
                     "setup.install_edl"
@@ -319,6 +380,14 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
             }))
         }
         "devices" => Ok(json!({ "devices": crate::usb::devices_as_json().unwrap_or_default() })),
+        // Fast connection list (USB descriptors plus ADB / fastboot / lockdown).
+        "diag.status" => {
+            let port = params
+                .get("port")
+                .and_then(|v| v.as_str())
+                .unwrap_or("auto");
+            Ok(crate::diag::status_value(port).await)
+        }
         // Explicit Qualcomm EDL / 9008 mode detection.
         "qualcomm.detect_edl" => {
             let devices = crate::usb::detect_edl_devices();
@@ -346,12 +415,10 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
                 "note": "MTP file listing requires libmtp integration (not yet bundled).",
             }))
         }
-        "mtp.pull" => {
-            Ok(json!({
-                "status": "unavailable",
-                "message": "MTP pull requires libmtp integration.",
-            }))
-        }
+        "mtp.pull" => Ok(json!({
+            "status": "unavailable",
+            "message": "MTP pull requires libmtp integration.",
+        })),
         "mtp.info" => {
             let devices = crate::usb::detect_mtp_devices();
             Ok(json!({
@@ -429,7 +496,10 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "imei1 is required".to_string())?
                 .to_string();
-            let imei2 = params.get("imei2").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let imei2 = params
+                .get("imei2")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             let mut args = vec!["w".into(), "imei".into(), imei1];
             if let Some(i2) = imei2 {
                 args.push(i2);
@@ -445,10 +515,8 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
             Ok(json!({ "job_id": job_id, "status": "started" }))
         }
         "mtk.erase_userdata" => {
-            let job_id = spawn_mtkclient_job(
-                vec!["e".into(), "userdata,metadata".into()],
-                write.clone(),
-            );
+            let job_id =
+                spawn_mtkclient_job(vec!["e".into(), "userdata,metadata".into()], write.clone());
             Ok(json!({ "job_id": job_id, "status": "started" }))
         }
 
@@ -462,10 +530,8 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
         // Remove screen lock (pattern / PIN / password) by wiping the
         // locksettings in userdata + metadata. Destructive to user data.
         "android.remove_screen_lock" => {
-            let job_id = spawn_mtkclient_job(
-                vec!["e".into(), "userdata,metadata".into()],
-                write.clone(),
-            );
+            let job_id =
+                spawn_mtkclient_job(vec!["e".into(), "userdata,metadata".into()], write.clone());
             Ok(json!({ "job_id": job_id, "status": "started" }))
         }
 
@@ -505,6 +571,31 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
         }
         "setup.install_edl" => {
             let job_id = spawn_pip_edl_job(write.clone());
+            Ok(json!({ "job_id": job_id, "status": "started" }))
+        }
+
+        "info" | "diag.read" | "diag.identity" | "diag.firmware" | "diag.battery"
+        | "diag.storage" => {
+            let port = params
+                .get("port")
+                .and_then(|v| v.as_str())
+                .unwrap_or("auto")
+                .to_string();
+            let section = match method {
+                "diag.firmware" => "firmware",
+                "diag.battery" => "battery",
+                "diag.storage" => "storage",
+                _ => params
+                    .get("section")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("identity"),
+            }
+            .to_string();
+            let dry_run = params
+                .get("dry_run")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let job_id = spawn_diag_job(port, section, dry_run, write.clone());
             Ok(json!({ "job_id": job_id, "status": "started" }))
         }
 
