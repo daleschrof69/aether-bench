@@ -319,6 +319,24 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
             }))
         }
         "devices" => Ok(json!({ "devices": crate::usb::devices_as_json().unwrap_or_default() })),
+        // Explicit Qualcomm EDL / 9008 mode detection.
+        "qualcomm.detect_edl" => {
+            let devices = crate::usb::detect_edl_devices();
+            Ok(json!({
+                "detected": !devices.is_empty(),
+                "count": devices.len(),
+                "devices": devices,
+            }))
+        }
+        // Android MTP (file transfer) detection.
+        "mtp.detect" => {
+            let devices = crate::usb::detect_mtp_devices();
+            Ok(json!({
+                "detected": !devices.is_empty(),
+                "count": devices.len(),
+                "devices": devices,
+            }))
+        }
 
         // Cable-free EDL entry: reboot an ADB/fastboot device into Qualcomm 9008.
         "qualcomm.enter_edl" => {

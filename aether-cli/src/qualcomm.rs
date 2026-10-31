@@ -81,6 +81,7 @@ pub async fn install_edl_streaming(tx: UnboundedSender<StreamLine>) -> Result<i3
 }
 
 /// Spawn `edl ARGS...` and stream stdout/stderr through the channel.
+/// Hardened with a 10-minute timeout and kill-on-drop.
 pub async fn run_edl_streaming(args: &[&str], tx: UnboundedSender<StreamLine>) -> Result<i32> {
     let bin = find_edl()?;
     let mut cmd = Command::new(&bin);
@@ -89,12 +90,38 @@ pub async fn run_edl_streaming(args: &[&str], tx: UnboundedSender<StreamLine>) -
     }
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(Stdio::null());
-    let mut child: Child = cmd.spawn().context("failed to spawn edl")?;
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+
+    let cmd_line = format!("edl {}", args.join(" "));
+    let mut child: Child = cmd
+        .spawn()
+        .with_context(|| format!("failed to spawn edl ({cmd_line})"))?;
+
     stream_child(&mut child, &tx).await;
-    let status = child.wait().await.context("edl exited abnormally")?;
+
+    let timeout = tokio::time::Duration::from_secs(600);
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            let _ = child.kill().await;
+            return Err(anyhow!("edl wait failed ({cmd_line}): {e}"));
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(anyhow!(
+                "edl timed out after {}s ({cmd_line})",
+                timeout.as_secs()
+            ));
+        }
+    };
     drop(tx);
-    Ok(status.code().unwrap_or(-1))
+
+    let code = status.code().unwrap_or(-1);
+    if code != 0 {
+        tracing::warn!("edl exited {code} ({cmd_line})");
+    }
+    Ok(code)
 }
 
 /// Pipe a child's stdout+stderr into the StreamLine channel.

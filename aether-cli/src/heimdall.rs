@@ -64,6 +64,7 @@ pub fn check_heimdall() -> Result<String> {
 
 /// Spawn `heimdall ARGS...` and stream stdout/stderr through the channel.
 /// Returns the exit code on completion.
+/// Hardened with a 10-minute timeout and kill-on-drop.
 pub async fn run_heimdall_streaming(
     args: &[&str],
     tx: UnboundedSender<StreamLine>,
@@ -75,31 +76,61 @@ pub async fn run_heimdall_streaming(
     }
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(Stdio::null());
-    let mut child: Child = cmd.spawn().context("failed to spawn heimdall")?;
-    let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
-    let stderr = child.stderr.take().ok_or_else(|| anyhow!("no stderr"))?;
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+
+    let cmd_line = format!("heimdall {}", args.join(" "));
+    let mut child: Child = cmd
+        .spawn()
+        .with_context(|| format!("failed to spawn heimdall ({cmd_line})"))?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
 
     let tx_out = tx.clone();
     let stdout_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx_out.send(StreamLine { stream: "stdout", line });
+        if let Some(stdout) = stdout {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = tx_out.send(StreamLine { stream: "stdout", line });
+            }
         }
     });
     let tx_err = tx.clone();
     let stderr_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx_err.send(StreamLine { stream: "stderr", line });
+        if let Some(stderr) = stderr {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = tx_err.send(StreamLine { stream: "stderr", line });
+            }
         }
     });
 
-    let status = child.wait().await.context("heimdall exited abnormally")?;
+    let timeout = tokio::time::Duration::from_secs(600);
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            let _ = child.kill().await;
+            return Err(anyhow!("heimdall wait failed ({cmd_line}): {e}"));
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(anyhow!(
+                "heimdall timed out after {}s ({cmd_line})",
+                timeout.as_secs()
+            ));
+        }
+    };
+
     let _ = stdout_task.await;
     let _ = stderr_task.await;
     drop(tx);
-    Ok(status.code().unwrap_or(-1))
+
+    let code = status.code().unwrap_or(-1);
+    if code != 0 {
+        tracing::warn!("heimdall exited {code} ({cmd_line})");
+    }
+    Ok(code)
 }
 
 /// Collect heimdall output into a single string. Used by the

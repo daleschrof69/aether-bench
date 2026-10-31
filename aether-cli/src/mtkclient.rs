@@ -153,6 +153,11 @@ pub async fn install_mtkclient_streaming(tx: UnboundedSender<StreamLine>) -> Res
 /// Spawn `python -m mtkclient ARGS...` and stream each stdout/stderr line
 /// through the provided channel until the process exits. Returns the exit
 /// code (0 = success).
+///
+/// Execution is hardened with:
+/// - 10-minute hard timeout (kills the child on expiry)
+/// - richer error context including the full command line
+/// - graceful handling of missing stdout/stderr pipes
 pub async fn run_mtkclient_streaming(
     args: &[&str],
     tx: UnboundedSender<StreamLine>,
@@ -165,34 +170,63 @@ pub async fn run_mtkclient_streaming(
     }
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(Stdio::null());
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
 
-    let mut child: Child = cmd.spawn().context("failed to spawn mtkclient")?;
-    let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
-    let stderr = child.stderr.take().ok_or_else(|| anyhow!("no stderr"))?;
+    let cmd_line = format!("python -m mtkclient {}", args.join(" "));
+    let mut child: Child = cmd
+        .spawn()
+        .with_context(|| format!("failed to spawn mtkclient ({cmd_line})"))?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
 
     let tx_out = tx.clone();
     let stdout_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stdout).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx_out.send(StreamLine { stream: "stdout", line });
+        if let Some(stdout) = stdout {
+            let mut lines = BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = tx_out.send(StreamLine { stream: "stdout", line });
+            }
         }
     });
 
     let tx_err = tx.clone();
     let stderr_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = tx_err.send(StreamLine { stream: "stderr", line });
+        if let Some(stderr) = stderr {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                let _ = tx_err.send(StreamLine { stream: "stderr", line });
+            }
         }
     });
 
-    let status = child.wait().await.context("mtkclient exited abnormally")?;
+    // Hard timeout so a hung BROM handshake cannot block forever.
+    let timeout = tokio::time::Duration::from_secs(600);
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => {
+            let _ = child.kill().await;
+            return Err(anyhow!("mtkclient wait failed ({cmd_line}): {e}"));
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            return Err(anyhow!(
+                "mtkclient timed out after {}s ({cmd_line})",
+                timeout.as_secs()
+            ));
+        }
+    };
+
     let _ = stdout_task.await;
     let _ = stderr_task.await;
-    drop(tx); // close channel so receivers can finish
+    drop(tx);
 
-    Ok(status.code().unwrap_or(-1))
+    let code = status.code().unwrap_or(-1);
+    if code != 0 {
+        tracing::warn!("mtkclient exited {code} ({cmd_line})");
+    }
+    Ok(code)
 }
 
 /// Collect the streamed output into a single string. Useful for the

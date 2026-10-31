@@ -7,6 +7,8 @@
 //!     aether-cli bypass-frp <port>  (NOT IMPLEMENTED) MTK BROM / Qualcomm EDL FRP bypass
 //!     aether-cli repair-imei <port> --imei1 <i> [--imei2 <i>]  (NOT IMPLEMENTED)
 //!     aether-cli unlock-bootloader <port>  (NOT IMPLEMENTED)
+//!     aether-cli samsung-factory-reset
+//!     aether-cli edl-detect          detect Qualcomm EDL / 9008 devices
 //!     aether-cli serve              run local WebSocket bridge for the Aether web dashboard
 
 mod exploits;
@@ -89,6 +91,10 @@ enum Command {
     /// Phone must be in Download Mode (Vol-Down + Bixby + Power, then Vol-Up).
     /// Works on Galaxy S9 / Note 9 / older A-series. Newer Knox 3.x models may reject writes.
     SamsungFactoryReset,
+    /// Detect Qualcomm EDL / 9008 devices currently attached.
+    EdlDetect,
+    /// Detect Android MTP (file transfer) devices currently attached.
+    MtpDetect,
     /// Run a local WebSocket bridge so the Aether web dashboard can talk to attached devices.
     Serve {
         /// Bind address.
@@ -149,6 +155,8 @@ async fn main() -> anyhow::Result<()> {
         Command::SamsungDetect => exploits::samsung::detect().await?,
         Command::SamsungReadPit => exploits::samsung::read_pit().await?,
         Command::SamsungFactoryReset => exploits::samsung::factory_reset().await?,
+        Command::EdlDetect => usb::report_edl_detection()?,
+        Command::MtpDetect => usb::report_mtp_detection()?,
         Command::Serve { addr } => bridge::serve(&addr).await?,
         Command::Setup => {
             println!("  {} installing mtkclient via pip (requires Python 3.8+) ...", "→".bright_green());

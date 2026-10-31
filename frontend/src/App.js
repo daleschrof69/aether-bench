@@ -48,6 +48,7 @@ function AppShell() {
               <Route path="/qualcomm" element={<QualcommService />} />
               <Route path="/iphone" element={<IPhoneService />} />
               <Route path="/samsung" element={<SamsungService />} />
+              <Route path="/mtp" element={<MTPService />} />
               <Route path="/drivers" element={<Drivers />} />
               <Route path="/logs" element={<Logs />} />
               <Route path="/pricing" element={<Pricing />} />

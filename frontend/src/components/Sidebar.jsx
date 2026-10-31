@@ -15,6 +15,7 @@ import {
   ShoppingCart,
   Menu,
   X,
+  Usb,
 } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { useAuth } from "../context/AuthContext";
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { to: "/qualcomm", label: "Qualcomm Service", icon: Radio, testid: "nav-qualcomm" },
   { to: "/iphone", label: "iPhone Service", icon: Smartphone, testid: "nav-iphone" },
   { to: "/samsung", label: "Samsung Service", icon: Tablet, testid: "nav-samsung" },
+  { to: "/mtp", label: "MTP Mode", icon: Usb, testid: "nav-mtp" },
   { to: "/drivers", label: "Drivers & Tools", icon: HardDriveDownload, testid: "nav-drivers" },
   { to: "/logs", label: "Logs", icon: ScrollText, testid: "nav-logs" },
   { to: "/docs", label: "Documentation", icon: BookOpen, testid: "nav-docs" },
