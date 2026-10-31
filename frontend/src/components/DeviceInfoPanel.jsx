@@ -42,13 +42,15 @@ export const DeviceInfoPanel = () => {
         <Row label="Brand" value={device?.brand} />
         <Row label="Model" value={device?.model} highlight />
         <Row label="Platform" value={device?.platform} />
+        <Row label="Firmware" value={device?.firmware} />
+        <Row label="Battery" value={device?.battery} />
         <Row label="IMEI 1" value={device?.imei_masked} />
         <Row label="IMEI 2" value={device?.imei2_masked} />
         <Row label="Serial Number" value={device?.serial} />
         <Row label="CPU ID" value={device?.cpuId} />
         <Row label="Storage" value={device?.storage} />
         <Row label="RAM" value={device?.ram} />
-        <Row label="Android" value={device ? `Android ${device.android}` : null} />
+        <Row label="Android" value={device?.android && device.android !== "—" ? `Android ${device.android}` : null} />
         <Row label="Patch Level" value={device?.patch} />
         <Row label="Bootloader" value={device?.bootloader} />
         <Row label="Region" value={device?.region} />
