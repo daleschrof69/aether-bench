@@ -1,20 +1,33 @@
 import React, { useState } from "react";
 import { Usb, Smartphone, Info, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { useApp } from "../context/AppContext";
+import { ActionGrid, MTP_ACTIONS } from "../components/ActionGrid";
+import { Console } from "../components/Console";
+
+const DEMO_DEVICES = [
+  { bus: 3, addr: 5, vid: "18d1", pid: "4ee1", mode: "Android MTP", manufacturer: "Google", product: "Pixel" },
+];
 
 export default function MTPService() {
-  const { cliBridge, pushLog } = useApp();
+  const { cliBridge, pushLog, runAction } = useApp();
   const [scanning, setScanning] = useState(false);
-  const [result, setResult] = useState(null); // { detected, count, devices } | { error }
+  const [result, setResult] = useState(null);
+  const [demoMode, setDemoMode] = useState(false);
 
   const bridgeOnline = cliBridge?.status === "connected";
 
   const detect = async () => {
     if (!bridgeOnline || typeof cliBridge.call !== "function") {
-      pushLog?.("ERROR", "Local Aether CLI bridge is offline — cannot detect MTP devices.");
-      setResult({ error: "CLI bridge offline. Start aether-cli serve and retry." });
+      // Demo fallback so the UI can be previewed without the CLI bridge.
+      setDemoMode(true);
+      setScanning(true);
+      pushLog?.("INFO", "Bridge offline — showing demo MTP detection.");
+      await new Promise((r) => setTimeout(r, 600));
+      setResult({ detected: true, count: 1, devices: DEMO_DEVICES, demo: true });
+      setScanning(false);
       return;
     }
+    setDemoMode(false);
     setScanning(true);
     setResult(null);
     pushLog?.("INFO", "Scanning for MTP devices via local bridge ...");
@@ -22,11 +35,7 @@ export default function MTPService() {
       const res = await cliBridge.call("mtp.detect", {});
       const devices = Array.isArray(res?.devices) ? res.devices : [];
       const detected = Boolean(res?.detected) || devices.length > 0;
-      setResult({
-        detected,
-        count: res?.count ?? devices.length,
-        devices,
-      });
+      setResult({ detected, count: res?.count ?? devices.length, devices });
       if (detected) {
         pushLog?.("SUCCESS", `MTP: ${devices.length} device(s) detected.`);
       } else {
@@ -65,11 +74,20 @@ export default function MTPService() {
         </button>
       </div>
 
-      {!bridgeOnline && (
+      {demoMode && (
+        <div className="bg-[#4d8bff]/5 border border-[#4d8bff]/30 px-4 py-3 flex items-center gap-3 flex-shrink-0">
+          <Info className="w-4 h-4 text-[#4d8bff]" strokeWidth={2} />
+          <span className="font-mono text-xs text-[#a9c7ff]/85">
+            Demo mode — CLI bridge is offline. Showing sample MTP detection. Start <code className="text-white">aether-cli serve</code> for live results.
+          </span>
+        </div>
+      )}
+
+      {!bridgeOnline && !demoMode && (
         <div className="bg-yellow-400/5 border border-yellow-400/30 px-4 py-3 flex items-center gap-3 flex-shrink-0">
           <XCircle className="w-4 h-4 text-yellow-400" strokeWidth={2} />
           <span className="font-mono text-xs text-yellow-200/80">
-            Local CLI bridge is offline. Run <code className="text-white">aether-cli serve</code> to enable detection.
+            Local CLI bridge is offline. Click Detect MTP for a demo preview, or run <code className="text-white">aether-cli serve</code> for live detection.
           </span>
         </div>
       )}
@@ -97,7 +115,7 @@ export default function MTPService() {
             )}
             <span className="font-mono text-xs text-white/80">
               {result.detected
-                ? `${result.count} MTP device(s) detected`
+                ? `${result.count} MTP device(s) detected${result.demo ? " (demo)" : ""}`
                 : "No MTP device detected"}
             </span>
           </div>
@@ -124,6 +142,15 @@ export default function MTPService() {
           )}
         </div>
       )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 flex-shrink-0">
+        <div className="lg:col-span-7">
+          <ActionGrid platform="MTP" actions={MTP_ACTIONS} title="MTP Operations" />
+        </div>
+        <div className="lg:col-span-5 min-h-[280px]">
+          <Console height="h-full" />
+        </div>
+      </div>
 
       <div className="border border-white/10 bg-[#09090B] p-4">
         <div className="flex items-start gap-3">

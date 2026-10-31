@@ -337,6 +337,29 @@ async fn dispatch(method: &str, params: &Value, write: &WsSink) -> Result<Value,
                 "devices": devices,
             }))
         }
+        "mtp.list" => {
+            // Placeholder: real MTP file listing requires libmtp or similar.
+            // Returns an empty list until a full MTP stack is integrated.
+            Ok(json!({
+                "status": "ok",
+                "files": [],
+                "note": "MTP file listing requires libmtp integration (not yet bundled).",
+            }))
+        }
+        "mtp.pull" => {
+            Ok(json!({
+                "status": "unavailable",
+                "message": "MTP pull requires libmtp integration.",
+            }))
+        }
+        "mtp.info" => {
+            let devices = crate::usb::detect_mtp_devices();
+            Ok(json!({
+                "status": "ok",
+                "count": devices.len(),
+                "devices": devices,
+            }))
+        }
 
         // Cable-free EDL entry: reboot an ADB/fastboot device into Qualcomm 9008.
         "qualcomm.enter_edl" => {

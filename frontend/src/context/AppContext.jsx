@@ -37,6 +37,11 @@ const BRIDGE_METHODS = {
   apple_info:             { method: "apple.read_info" },
   icloud_check:           { method: "apple.read_info" },
   hello_screen_bypass:    { method: "apple.pwn_dfu" },
+  // MTP
+  mtp_detect:             { method: "mtp.detect" },
+  mtp_list:               { method: "mtp.list" },
+  mtp_pull:               { method: "mtp.pull" },
+  mtp_info:               { method: "mtp.info" },
 };
 
 const formatTime = (d = new Date()) =>

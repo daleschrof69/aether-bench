@@ -206,3 +206,11 @@ export const SAMSUNG_ACTIONS = [
   { key: "samsung_mdm_remove",    label: "MDM / KG Remove",    icon: "Building2",    danger: false, testid: "action-samsung-mdm",     cost: "25 Credits" },
   { key: "samsung_factory_reset", label: "Factory Reset",      icon: "Eraser",       danger: true,  testid: "action-samsung-reset",   cost: "15 Credits" },
 ];
+
+// MTP — file-transfer mode operations (detection + basic file ops).
+export const MTP_ACTIONS = [
+  { key: "mtp_detect",    label: "Detect MTP",     icon: "Usb",      danger: false, testid: "action-mtp-detect",  cost: "Free" },
+  { key: "mtp_list",      label: "List Files",     icon: "Folder",   danger: false, testid: "action-mtp-list",    cost: "Free" },
+  { key: "mtp_pull",      label: "Pull File",      icon: "Download", danger: false, testid: "action-mtp-pull",    cost: "Free" },
+  { key: "mtp_info",      label: "Device Info",    icon: "Info",     danger: false, testid: "action-mtp-info",    cost: "Free" },
+];
