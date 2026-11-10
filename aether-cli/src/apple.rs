@@ -75,13 +75,18 @@ async fn run_streaming(bin: &str, args: &[&str], tx: UnboundedSender<StreamLine>
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
-    let mut child: Child = cmd.spawn().with_context(|| format!("failed to spawn {bin}"))?;
+    let mut child: Child = cmd
+        .spawn()
+        .with_context(|| format!("failed to spawn {bin}"))?;
     if let Some(stdout) = child.stdout.take() {
         let tx2 = tx.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let _ = tx2.send(StreamLine { stream: "stdout", line });
+                let _ = tx2.send(StreamLine {
+                    stream: "stdout",
+                    line,
+                });
             }
         });
     }
@@ -90,7 +95,10 @@ async fn run_streaming(bin: &str, args: &[&str], tx: UnboundedSender<StreamLine>
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let _ = tx2.send(StreamLine { stream: "stderr", line });
+                let _ = tx2.send(StreamLine {
+                    stream: "stderr",
+                    line,
+                });
             }
         });
     }
@@ -109,4 +117,28 @@ pub async fn read_info_streaming(tx: UnboundedSender<StreamLine>) -> Result<i32>
 pub async fn pwn_dfu_streaming(tx: UnboundedSender<StreamLine>) -> Result<i32> {
     let bin = find_gaster()?;
     run_streaming(&bin, &["pwn"], tx).await
+}
+
+/// `irecovery` binary, if libimobiledevice's recovery tools are installed.
+pub fn irecovery_bin() -> Result<String> {
+    find_irecovery()
+}
+
+/// Read-only lockdown query from the same libimobiledevice suite as irecovery.
+/// Used for a trusted normal-mode iPhone. DFU and Recovery use `irecovery -q`.
+pub fn ideviceinfo_bin() -> Result<String> {
+    find_tool(
+        &["ideviceinfo", "ideviceinfo.exe"],
+        "install libimobiledevice: macOS `brew install libimobiledevice`, \
+         Linux `apt install libimobiledevice-utils`.",
+    )
+}
+
+/// Lists UDIDs of paired or trusted iPhones. Read-only.
+pub fn idevice_id_bin() -> Result<String> {
+    find_tool(
+        &["idevice_id", "idevice_id.exe"],
+        "install libimobiledevice: macOS `brew install libimobiledevice`, \
+         Linux `apt install libimobiledevice-utils`.",
+    )
 }

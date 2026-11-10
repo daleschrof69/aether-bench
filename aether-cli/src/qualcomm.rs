@@ -124,6 +124,23 @@ pub async fn run_edl_streaming(args: &[&str], tx: UnboundedSender<StreamLine>) -
     Ok(code)
 }
 
+/// Collect `edl ARGS...` into one string. Used by non-streaming identity reads.
+pub async fn run_edl_collect(args: &[&str]) -> Result<(i32, String)> {
+    let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<StreamLine>();
+    let join = tokio::spawn(async move {
+        let refs: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+        run_edl_streaming(&refs, tx).await
+    });
+    let mut buf = String::new();
+    while let Some(line) = rx.recv().await {
+        buf.push_str(&line.line);
+        buf.push('\n');
+    }
+    let exit = join.await.context("edl task panicked")??;
+    Ok((exit, buf))
+}
+
 /// Pipe a child's stdout+stderr into the StreamLine channel.
 async fn stream_child(child: &mut Child, tx: &UnboundedSender<StreamLine>) {
     if let Some(stdout) = child.stdout.take() {
@@ -131,7 +148,10 @@ async fn stream_child(child: &mut Child, tx: &UnboundedSender<StreamLine>) {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let _ = tx2.send(StreamLine { stream: "stdout", line });
+                let _ = tx2.send(StreamLine {
+                    stream: "stdout",
+                    line,
+                });
             }
         });
     }
@@ -140,7 +160,10 @@ async fn stream_child(child: &mut Child, tx: &UnboundedSender<StreamLine>) {
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let _ = tx2.send(StreamLine { stream: "stderr", line });
+                let _ = tx2.send(StreamLine {
+                    stream: "stderr",
+                    line,
+                });
             }
         });
     }

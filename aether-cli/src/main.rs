@@ -3,7 +3,8 @@
 //! Subcommand layout:
 //!     aether-cli devices            list USB targets currently attached
 //!     aether-cli scan               watch for new device hot-plug events
-//!     aether-cli info <port>        read chipset / IMEI / serial from target
+//!     aether-cli info <port>        read serial, model, and firmware/build
+//!     aether-cli diag status|identity|firmware|battery|storage
 //!     aether-cli bypass-frp <port>  (NOT IMPLEMENTED) MTK BROM / Qualcomm EDL FRP bypass
 //!     aether-cli repair-imei <port> --imei1 <i> [--imei2 <i>]  (NOT IMPLEMENTED)
 //!     aether-cli unlock-bootloader <port>  (NOT IMPLEMENTED)
@@ -11,14 +12,15 @@
 //!     aether-cli edl-detect          detect Qualcomm EDL / 9008 devices
 //!     aether-cli serve              run local WebSocket bridge for the Aether web dashboard
 
-mod exploits;
-mod usb;
-mod bridge;
-mod mtkclient;
-mod heimdall;
-mod edl;
-mod qualcomm;
 mod apple;
+mod bridge;
+mod diag;
+mod edl;
+mod exploits;
+mod heimdall;
+mod mtkclient;
+mod qualcomm;
+mod usb;
 
 use clap::{Parser, Subcommand};
 use colored::Colorize;
@@ -57,11 +59,36 @@ enum Command {
     Devices,
     /// Continuously watch for device hot-plug events.
     Scan,
-    /// Read chipset / IMEI / serial from the target.
+    /// Read serial, model, firmware/build, and other identity fields.
+    ///
+    /// The reader follows the connection: Samsung Download mode, Apple
+    /// DFU/Recovery or a trusted iPhone, MediaTek BROM, Qualcomm EDL, or an
+    /// authorized ADB / fastboot session. Exits with an error when no device
+    /// is attached.
     Info {
-        /// USB port identifier (e.g. "COM5", "/dev/ttyUSB0", or "auto").
+        /// Print a single JSON object.
+        #[arg(long)]
+        json: bool,
+        /// Print a synthetic report without opening USB or external tools.
+        #[arg(long)]
+        dry_run: bool,
+        /// Selector: auto, vid:pid, bus:addr, or serial.
         #[arg(default_value = "auto")]
         port: String,
+    },
+    /// Read-only connection and identity queries.
+    Diag {
+        /// Print a single JSON object.
+        #[arg(long, global = true)]
+        json: bool,
+        /// Print a synthetic report without opening USB or external tools.
+        #[arg(long, global = true)]
+        dry_run: bool,
+        /// Selector: auto, vid:pid, bus:addr, or serial.
+        #[arg(long, global = true, default_value = "auto")]
+        port: String,
+        #[command(subcommand)]
+        section: DiagSection,
     },
     /// Bypass Factory Reset Protection via mtkclient (erases the FRP partition).
     BypassFrp {
@@ -108,6 +135,20 @@ enum Command {
     Doctor,
 }
 
+#[derive(Subcommand, Debug)]
+enum DiagSection {
+    /// List supported connections. Does not query firmware.
+    Status,
+    /// Serial, model, firmware/build, chipset, and related identity fields.
+    Identity,
+    /// Firmware kind or build string exposed by the current mode.
+    Firmware,
+    /// Battery level and health when this mode exposes them.
+    Battery,
+    /// Storage capacity when this mode exposes it.
+    Storage,
+}
+
 fn print_banner() {
     println!("{}", BANNER.bright_green());
     println!(
@@ -140,13 +181,32 @@ fn init_tracing(verbose: bool) {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     init_tracing(cli.verbose);
-    if !cli.no_banner {
+    if !cli.no_banner && !command_wants_json(&cli.cmd) {
         print_banner();
     }
     match cli.cmd {
         Command::Devices => usb::list_devices()?,
         Command::Scan => usb::watch_hotplug().await?,
-        Command::Info { port } => exploits::info::read_device_info(&port).await?,
+        Command::Info {
+            port,
+            json,
+            dry_run,
+        } => diag::run_cli(&port, "identity", json, dry_run).await?,
+        Command::Diag {
+            port,
+            json,
+            dry_run,
+            section,
+        } => {
+            let name = match section {
+                DiagSection::Status => "status",
+                DiagSection::Identity => "identity",
+                DiagSection::Firmware => "firmware",
+                DiagSection::Battery => "battery",
+                DiagSection::Storage => "storage",
+            };
+            diag::run_cli(&port, name, json, dry_run).await?
+        }
         Command::BypassFrp { port } => exploits::frp::bypass_frp(&port).await?,
         Command::RepairImei { port, imei1, imei2 } => {
             exploits::imei::repair_imei(&port, &imei1, imei2.as_deref()).await?
@@ -159,12 +219,22 @@ async fn main() -> anyhow::Result<()> {
         Command::MtpDetect => usb::report_mtp_detection()?,
         Command::Serve { addr } => bridge::serve(&addr).await?,
         Command::Setup => {
-            println!("  {} installing mtkclient via pip (requires Python 3.8+) ...", "→".bright_green());
+            println!(
+                "  {} installing mtkclient via pip (requires Python 3.8+) ...",
+                "→".bright_green()
+            );
             let out = mtkclient::install_mtkclient().await?;
             println!("{}", out.dimmed());
             let ver = mtkclient::check_mtkclient()?;
-            println!("  {} mtkclient {} ready", "✓".bright_green(), ver.bright_white());
-            println!("  {} installing edlclient (Qualcomm Firehose) via pip ...", "→".bright_green());
+            println!(
+                "  {} mtkclient {} ready",
+                "✓".bright_green(),
+                ver.bright_white()
+            );
+            println!(
+                "  {} installing edlclient (Qualcomm Firehose) via pip ...",
+                "→".bright_green()
+            );
             match qualcomm::install_edl_once().await {
                 Ok(_) => println!("  {} edlclient ready", "✓".bright_green()),
                 Err(e) => println!("  {} edlclient: {}", "✗".bright_red(), e),
@@ -187,7 +257,21 @@ async fn main() -> anyhow::Result<()> {
                 Ok(v) => println!("  {} apple: {}", "✓".bright_green(), v.bright_white()),
                 Err(e) => println!("  {} apple: {}", "✗".bright_red(), e),
             }
+            for (ok, line) in diag::tool_status_lines() {
+                if ok {
+                    println!("  {} {}", "✓".bright_green(), line.bright_white());
+                } else {
+                    println!("  {} {}", "✗".bright_red(), line);
+                }
+            }
         }
     }
     Ok(())
+}
+
+fn command_wants_json(cmd: &Command) -> bool {
+    match cmd {
+        Command::Info { json, .. } | Command::Diag { json, .. } => *json,
+        _ => false,
+    }
 }
