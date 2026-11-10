@@ -74,7 +74,47 @@ pub struct UsbSignature {
 
 /// Exact VID:PID match. Vendor-only fallbacks are handled separately so a
 /// random accessory with a known vendor id is not treated as a phone mode.
+/// iPhone / iPad / iPod USB IDs. Keyboards and trackpads share vendor 0x05ac
+/// and must stay out of this list.
+fn apple_signature(vid: u16, pid: u16) -> Option<UsbSignature> {
+    if vid != 0x05ac {
+        return None;
+    }
+    let (mode, kind) = match pid {
+        // DFU / WTF. 0x4141 is the PID a device already in pwned-DFU enumerates as.
+        0x1222 => ("WTF mode", UsbKind::AppleDfu),
+        0x1227 => ("DFU mode", UsbKind::AppleDfu),
+        0x1338 => ("Restore (DFU)", UsbKind::AppleDfu),
+        0x4141 => ("Pwned DFU", UsbKind::AppleDfu),
+        // libirecovery recovery PIDs are 0x1280–0x1283, not only 0x1281.
+        0x1280..=0x1283 => ("Recovery mode", UsbKind::AppleRecovery),
+        // Normal-mode multiplex. Modern iPhones use 0x12a8; older models use the
+        // other IDs in 0x1290–0x12ab.
+        0x12a8 | 0x1290 | 0x1292 | 0x1294 | 0x1297 | 0x12a0 => {
+            ("Normal (iPhone)", UsbKind::AppleNormal)
+        }
+        0x1291 | 0x1293 | 0x129e | 0x12a4 => ("Normal (iPod)", UsbKind::AppleNormal),
+        0x12aa => ("Normal (iPod/iPad)", UsbKind::AppleNormal),
+        0x129a | 0x129f | 0x12a2 | 0x12a3 | 0x12a5 | 0x12a6 | 0x12a9 | 0x12ab => {
+            ("Normal (iPad)", UsbKind::AppleNormal)
+        }
+        0x1295 | 0x1296 | 0x1298 | 0x129b | 0x129c | 0x129d | 0x12a1 | 0x12a7 => {
+            ("Normal (iPhone/iPad)", UsbKind::AppleNormal)
+        }
+        _ => return None,
+    };
+    Some(UsbSignature {
+        platform: "Apple",
+        brand: "Apple",
+        mode,
+        kind,
+    })
+}
+
 pub fn exact_signature(vid: u16, pid: u16) -> Option<UsbSignature> {
+    if let Some(sig) = apple_signature(vid, pid) {
+        return Some(sig);
+    }
     let (platform, brand, mode, kind) = match (vid, pid) {
         (0x0e8d, 0x0003) => ("MediaTek", "MediaTek", "Preloader", UsbKind::Mtk),
         (0x0e8d, 0x2000) => ("MediaTek", "MediaTek", "BROM (Boot ROM)", UsbKind::Mtk),
@@ -117,12 +157,6 @@ pub fn exact_signature(vid: u16, pid: u16) -> Option<UsbSignature> {
             "Diagnostic (DIAG)",
             UsbKind::QualcommDiag,
         ),
-
-        (0x05ac, 0x1227) => ("Apple", "Apple", "DFU mode", UsbKind::AppleDfu),
-        (0x05ac, 0x1338) => ("Apple", "Apple", "Restore (DFU)", UsbKind::AppleDfu),
-        (0x05ac, 0x1281) => ("Apple", "Apple", "Recovery mode", UsbKind::AppleRecovery),
-        (0x05ac, 0x12a8) => ("Apple", "Apple", "Normal (iPhone)", UsbKind::AppleNormal),
-        (0x05ac, 0x12aa) => ("Apple", "Apple", "Normal (iPod/iPad)", UsbKind::AppleNormal),
 
         (0x04e8, 0x685d) => (
             "Samsung",
@@ -248,7 +282,7 @@ fn identity_from(d: &Device<Context>, desc: &DeviceDescriptor) -> UsbIdentity {
         }
         Err(_) => ("—".into(), "—".into(), "—".into()),
     };
-    UsbIdentity {
+    let mut ident = UsbIdentity {
         bus: d.bus_number(),
         addr: d.address(),
         vid: format!("{:04x}", desc.vendor_id()),
@@ -261,7 +295,43 @@ fn identity_from(d: &Device<Context>, desc: &DeviceDescriptor) -> UsbIdentity {
         brand: sig.map(|s| s.brand),
         mode: exact.map(|s| s.mode),
         kind: sig.map(|s| s.kind).unwrap_or(UsbKind::Unknown),
+    };
+    promote_apple_strings(&mut ident);
+    ident
+}
+
+/// Catch an iPhone whose PID is not in the table yet. Apple keyboards share
+/// vendor 0x05ac, so this only fires on iPhone/iPad/iPod product strings or a
+/// DFU serial (`CPID:`).
+fn promote_apple_strings(ident: &mut UsbIdentity) {
+    if ident.vid != "05ac" {
+        return;
     }
+    if matches!(
+        ident.kind,
+        UsbKind::AppleDfu | UsbKind::AppleRecovery | UsbKind::AppleNormal
+    ) {
+        return;
+    }
+    let product = ident.product.to_ascii_lowercase();
+    let serial = ident.serial.to_ascii_lowercase();
+    let (mode, kind) = if serial.contains("cpid:") || product.contains("dfu") {
+        ("DFU mode", UsbKind::AppleDfu)
+    } else if product.contains("recovery") {
+        ("Recovery mode", UsbKind::AppleRecovery)
+    } else if product.contains("iphone") || product.contains("apple mobile device") {
+        ("Normal (iPhone)", UsbKind::AppleNormal)
+    } else if product.contains("ipad") {
+        ("Normal (iPad)", UsbKind::AppleNormal)
+    } else if product.contains("ipod") {
+        ("Normal (iPod)", UsbKind::AppleNormal)
+    } else {
+        return;
+    };
+    ident.platform = Some("Apple");
+    ident.brand = Some("Apple");
+    ident.mode = Some(mode);
+    ident.kind = kind;
 }
 
 /// Enumerate USB devices with descriptor identity. Empty when libusb is unavailable.
@@ -570,6 +640,49 @@ mod tests {
     fn apple_accessories_are_not_phones() {
         assert!(exact_signature(0x05ac, 0x024f).is_none());
         assert!(signature(0x05ac, 0x024f).is_none());
+    }
+
+    #[test]
+    fn iphone_recovery_and_normal_pids_are_detected() {
+        for pid in [0x1280u16, 0x1281, 0x1282, 0x1283] {
+            let sig = exact_signature(0x05ac, pid).unwrap();
+            assert_eq!(sig.kind, UsbKind::AppleRecovery, "{pid:04x}");
+            assert_eq!(sig.platform, "Apple");
+        }
+        assert_eq!(exact_signature(0x05ac, 0x1222).unwrap().kind, UsbKind::AppleDfu);
+        assert_eq!(exact_signature(0x05ac, 0x1290).unwrap().mode, "Normal (iPhone)");
+        assert_eq!(exact_signature(0x05ac, 0x12a8).unwrap().mode, "Normal (iPhone)");
+        assert_eq!(exact_signature(0x05ac, 0x12aa).unwrap().mode, "Normal (iPod/iPad)");
+    }
+
+    #[test]
+    fn iphone_product_string_promotes_unknown_pid() {
+        let mut ident = UsbIdentity {
+            bus: 1,
+            addr: 2,
+            vid: "05ac".into(),
+            pid: "ffff".into(),
+            manufacturer: "Apple Inc.".into(),
+            product: "iPhone".into(),
+            serial: "—".into(),
+            bcd_device: "0".into(),
+            platform: None,
+            brand: None,
+            mode: None,
+            kind: UsbKind::Unknown,
+        };
+        promote_apple_strings(&mut ident);
+        assert_eq!(ident.kind, UsbKind::AppleNormal);
+        assert_eq!(ident.platform, Some("Apple"));
+        assert_eq!(ident.mode, Some("Normal (iPhone)"));
+
+        let mut keyboard = ident.clone();
+        keyboard.product = "Apple Internal Keyboard / Trackpad".into();
+        keyboard.kind = UsbKind::Unknown;
+        keyboard.platform = None;
+        keyboard.mode = None;
+        promote_apple_strings(&mut keyboard);
+        assert_eq!(keyboard.kind, UsbKind::Unknown);
     }
 
     #[test]

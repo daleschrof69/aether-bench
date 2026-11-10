@@ -22,10 +22,23 @@ export const USB_SIGNATURES = [
   { vid: 0x05c6, pid: 0x676c, platform: "Qualcomm", mode: "QDLoader HS-USB", repair: true },
   { vid: 0x05c6, pid: 0x9091, platform: "Qualcomm", mode: "EDL (Firehose)", repair: true },
   // ── Apple ───────────────────────────────────────────────────────────────
+  // DFU / WTF, every recovery PID (0x1280–0x1283), and the normal-mode
+  // multiplex range. Modern iPhones enumerate as 0x12a8. Keyboards share
+  // vendor 0x05ac and are intentionally not listed.
+  { vid: 0x05ac, pid: 0x1222, platform: "Apple", mode: "WTF mode", repair: true },
   { vid: 0x05ac, pid: 0x1227, platform: "Apple", mode: "DFU mode", repair: true },
+  { vid: 0x05ac, pid: 0x1280, platform: "Apple", mode: "Recovery mode", repair: true },
   { vid: 0x05ac, pid: 0x1281, platform: "Apple", mode: "Recovery mode", repair: true },
+  { vid: 0x05ac, pid: 0x1282, platform: "Apple", mode: "Recovery mode", repair: true },
+  { vid: 0x05ac, pid: 0x1283, platform: "Apple", mode: "Recovery mode", repair: true },
   { vid: 0x05ac, pid: 0x1338, platform: "Apple", mode: "Restore (DFU)", repair: true },
+  { vid: 0x05ac, pid: 0x4141, platform: "Apple", mode: "Pwned DFU", repair: true },
   { vid: 0x05ac, pid: 0x12a8, platform: "Apple", mode: "Normal (iPhone)", repair: false },
+  { vid: 0x05ac, pid: 0x1290, platform: "Apple", mode: "Normal (iPhone)", repair: false },
+  { vid: 0x05ac, pid: 0x1292, platform: "Apple", mode: "Normal (iPhone)", repair: false },
+  { vid: 0x05ac, pid: 0x1294, platform: "Apple", mode: "Normal (iPhone)", repair: false },
+  { vid: 0x05ac, pid: 0x1297, platform: "Apple", mode: "Normal (iPhone)", repair: false },
+  { vid: 0x05ac, pid: 0x12a0, platform: "Apple", mode: "Normal (iPhone)", repair: false },
   { vid: 0x05ac, pid: 0x12aa, platform: "Apple", mode: "Normal (iPod/iPad)", repair: false },
   // ── Samsung ─────────────────────────────────────────────────────────────
   { vid: 0x04e8, pid: 0x685d, platform: "Samsung", mode: "Download mode (Odin)", repair: true },
@@ -82,7 +95,26 @@ export const USB_VENDORS = {
  * Resolve a USB device to { platform, mode, repair, brand, known }.
  * Falls back to a vendor-level match, then null if the vendor is unknown too.
  */
-export const classifyUsb = (vid, pid) => {
+export const classifyUsb = (vid, pid, hints = {}) => {
+  const product = String(hints.product || "").toLowerCase();
+  const serial = String(hints.serial || "").toLowerCase();
+  if (vid === 0x05ac && !USB_SIGNATURES.some((s) => s.vid === vid && s.pid === pid)) {
+    if (serial.includes("cpid:") || product.includes("dfu")) {
+      return { vid, pid, platform: "Apple", mode: "DFU mode", repair: true, brand: "Apple", known: true };
+    }
+    if (product.includes("recovery")) {
+      return { vid, pid, platform: "Apple", mode: "Recovery mode", repair: true, brand: "Apple", known: true };
+    }
+    if (product.includes("iphone") || product.includes("apple mobile device")) {
+      return { vid, pid, platform: "Apple", mode: "Normal (iPhone)", repair: false, brand: "Apple", known: true };
+    }
+    if (product.includes("ipad")) {
+      return { vid, pid, platform: "Apple", mode: "Normal (iPad)", repair: false, brand: "Apple", known: true };
+    }
+    if (product.includes("ipod")) {
+      return { vid, pid, platform: "Apple", mode: "Normal (iPod)", repair: false, brand: "Apple", known: true };
+    }
+  }
   const sig = USB_SIGNATURES.find((s) => s.vid === vid && s.pid === pid);
   if (sig) {
     return { ...sig, brand: USB_VENDORS[vid]?.brand, known: true };

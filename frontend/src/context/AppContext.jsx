@@ -67,7 +67,15 @@ const platformFromMode = (mode) => {
   if (mode.startsWith("MediaTek") || mode.includes("BROM") || mode.includes("Preloader")) return "MediaTek";
   if (mode.startsWith("Qualcomm") || mode.includes("EDL") || mode.includes("Sahara")) return "Qualcomm";
   if (mode.startsWith("Samsung") || mode.includes("Download") || mode.includes("Odin")) return "Samsung";
-  if (mode.startsWith("Apple") || mode.includes("DFU") || mode.includes("Recovery")) return "Apple";
+  if (
+    mode.startsWith("Apple") ||
+    mode.includes("iPhone") ||
+    mode.includes("iPad") ||
+    mode.includes("iPod") ||
+    mode.includes("DFU") ||
+    mode.includes("Recovery") ||
+    mode.includes("WTF")
+  ) return "Apple";
   if (mode.includes("Android") || mode.includes("ADB") || mode.includes("MTP") || mode.includes("Fastboot")) return "Android";
   return "";
 };

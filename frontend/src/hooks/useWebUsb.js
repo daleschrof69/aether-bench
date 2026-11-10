@@ -2,7 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { USB_REQUEST_FILTERS, classifyUsb } from "../lib/usbSignatures";
 
 const normalize = (d) => {
-  const sig = classifyUsb(d.vendorId, d.productId);
+  const sig = classifyUsb(d.vendorId, d.productId, {
+    product: d.productName || "",
+    serial: d.serialNumber || "",
+  });
   return {
     raw: d,
     vendorId: d.vendorId,
