@@ -16,6 +16,7 @@ import MTKService from "./pages/MTKService";
 import QualcommService from "./pages/QualcommService";
 import IPhoneService from "./pages/IPhoneService";
 import SamsungService from "./pages/SamsungService";
+import MTPService from "./pages/MTPService";
 import Logs from "./pages/Logs";
 import Drivers from "./pages/Drivers";
 import Pricing from "./pages/Pricing";
